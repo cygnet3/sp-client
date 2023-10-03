@@ -15,7 +15,7 @@ nakamoto = { git = "https://github.com/cloudhead/nakamoto", branch = "master" }
 # bdk = { version = "0.28", default-features = false , features = ["std"] }
 silentpayments = { git = "https://github.com/cygnet3/rust-silentpayments", branch = "master" }
 lazy_static = "1.4"
-electrum-client = { path = "../../../rust/rust-electrum-client" }
+electrum-client = { git = "https://github.com/cygnet3/rust-electrum-client", branch = "sp_tweaks" }
 anyhow = "1.0"
 serde = { version = "1.0.188", features = ["derive"] }
 # serde_json = "1.0.107"
