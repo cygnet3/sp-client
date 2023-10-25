@@ -95,6 +95,19 @@ fn wire_setup_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + Unwind
         },
     )
 }
+fn wire_start_nakamoto_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + UnwindSafe) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "start_nakamoto",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_files_dir = files_dir.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(start_nakamoto(api_files_dir))
+        },
+    )
+}
 fn wire_get_peer_count_impl(port_: MessagePort) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, u32, _>(
         WrapInfo {
@@ -136,6 +149,16 @@ fn wire_get_wallet_info_impl(port_: MessagePort) {
             mode: FfiCallMode::Normal,
         },
         move || move |task_callback| Result::<_, ()>::Ok(get_wallet_info()),
+    )
+}
+fn wire_get_amount_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, u32, _>(
+        WrapInfo {
+            debug_name: "get_amount",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(get_amount()),
     )
 }
 fn wire_get_receiving_address_impl(port_: MessagePort) {

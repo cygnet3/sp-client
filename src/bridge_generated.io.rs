@@ -27,6 +27,11 @@ pub extern "C" fn wire_setup(port_: i64, files_dir: *mut wire_uint_8_list) {
 }
 
 #[no_mangle]
+pub extern "C" fn wire_start_nakamoto(port_: i64, files_dir: *mut wire_uint_8_list) {
+    wire_start_nakamoto_impl(port_, files_dir)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_get_peer_count(port_: i64) {
     wire_get_peer_count_impl(port_)
 }
@@ -44,6 +49,11 @@ pub extern "C" fn wire_scan_to_tip(port_: i64) {
 #[no_mangle]
 pub extern "C" fn wire_get_wallet_info(port_: i64) {
     wire_get_wallet_info_impl(port_)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_get_amount(port_: i64) {
+    wire_get_amount_impl(port_)
 }
 
 #[no_mangle]
