@@ -10,10 +10,15 @@ use crate::constants::{OwnedOutputs, ScanHeight};
 pub fn setup(path: String, birthday: u32) -> Result<()> {
     let loc: PathBuf = PathBuf::from(format!("{}/sp-web.sqlite", path));
     set_db_path(&loc)?;
-    if select!(Option<ScanHeight>)?.is_none() {
-        reset_scan_height(birthday)?;
+
+    match select!(Option<ScanHeight>)? {
+        // if a scan height is known, drop items drop the db after the scanheight (if shutdown incorrectly)
+        Some(scanheight) => {
+            reset_owned_outputs_from_block_height(scanheight.scanheight.unwrap()).unwrap()
+        }
+        // if no scan height is known, reset it and set it to the birthday
+        None => reset_scan_height(birthday)?,
     }
-    reset_owned_outputs_from_block_height(birthday)?;
     // reset_scan_height()?;
     // drop_owned_outpoints()?;
     Ok(())
