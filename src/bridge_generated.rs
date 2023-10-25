@@ -72,6 +72,16 @@ fn wire_create_scan_progress_stream_impl(port_: MessagePort) {
         },
     )
 }
+fn wire_reset_wallet_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "reset_wallet",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(reset_wallet()),
+    )
+}
 fn wire_setup_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + UnwindSafe) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {

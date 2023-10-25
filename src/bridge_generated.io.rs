@@ -17,6 +17,11 @@ pub extern "C" fn wire_create_scan_progress_stream(port_: i64) {
 }
 
 #[no_mangle]
+pub extern "C" fn wire_reset_wallet(port_: i64) {
+    wire_reset_wallet_impl(port_)
+}
+
+#[no_mangle]
 pub extern "C" fn wire_setup(port_: i64, files_dir: *mut wire_uint_8_list) {
     wire_setup_impl(port_, files_dir)
 }

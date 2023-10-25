@@ -18,6 +18,12 @@ pub fn create_scan_progress_stream( s: StreamSink<ScanProgress>) {
     stream::create_scan_progress_stream(s);
 }
 
+pub fn reset_wallet() {
+    let birthday = get_birthday().unwrap();
+    db::reset_scan_height(birthday).unwrap();
+    db::drop_owned_outpoints().unwrap();
+}
+
 pub fn setup(files_dir: String,
     ) {
     loginfo("client setup");
