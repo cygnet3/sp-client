@@ -46,7 +46,7 @@ pub fn get_peer_count() -> u32 {
 }
 
 pub fn scan_next_n_blocks(n: u32) {
-    let sp_client = get_sp_client().unwrap();
+    let sp_client = get_sp_client();
 
     let sp_receiver = &sp_client.sp_receiver;
     let scan_sk = sp_client.scan_privkey;

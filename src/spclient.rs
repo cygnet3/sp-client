@@ -7,7 +7,7 @@ use silentpayments::receiving::Receiver;
 use std::str::FromStr;
 
 use lazy_static::lazy_static;
-use anyhow::{Result, Error};
+use anyhow::Result;
 
 const BIRTHDAY: u32 = 160000;
 const IS_TESTNET: bool = true;
@@ -33,16 +33,14 @@ pub fn create_sp_client() -> Result<()> {
     Ok(())
 }
 
-pub fn get_sp_client() -> Result<&'static SpClient> {
+pub fn get_sp_client() -> &'static SpClient {
 
-    let client = SPCLIENT.get();
-
-    client.ok_or_else( || Error::msg("no client set yet"))
+    SPCLIENT.wait()
 }
 
 
 pub fn get_receiving_address() -> Result<String> {
-    let client = get_sp_client()?;
+    let client = get_sp_client();
 
     let receiver = &client.sp_receiver;
 
@@ -50,7 +48,7 @@ pub fn get_receiving_address() -> Result<String> {
 }
 
 pub fn get_birthday() -> Result<u32> {
-    let client = get_sp_client()?;
+    let client = get_sp_client();
     let birthday = client.birthday;
     Ok(birthday)
 }
