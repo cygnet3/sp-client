@@ -27,8 +27,13 @@ pub extern "C" fn wire_setup(port_: i64, files_dir: *mut wire_uint_8_list) {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_start_nakamoto(port_: i64, files_dir: *mut wire_uint_8_list) {
-    wire_start_nakamoto_impl(port_, files_dir)
+pub extern "C" fn wire_start_nakamoto(port_: i64) {
+    wire_start_nakamoto_impl(port_)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_restart_nakamoto(port_: i64) {
+    wire_restart_nakamoto_impl(port_)
 }
 
 #[no_mangle]

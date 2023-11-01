@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap, net,
-    path::PathBuf,
-    str::FromStr,
-    sync::Mutex,
-};
+use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::Mutex};
 
 use anyhow::{Error, Result};
 use bitcoin::{
@@ -28,16 +23,33 @@ use crate::{
 };
 
 lazy_static! {
-    static ref HANDLE: OnceCell<Mutex<nakamoto::client::Handle<nakamoto::net::poll::Waker>>> =
-        OnceCell::new();
+    static ref HANDLE: Mutex<Option<nakamoto::client::Handle<nakamoto::net::poll::Waker>>> =
+        Mutex::new(None);
+    static ref NAKAMOTO_CONFIG: OnceCell<Config> = OnceCell::new();
+}
+
+pub fn setup(path: String) -> anyhow::Result<()> {
+    let mut cfg = Config::new(client::Network::Signet);
+
+    cfg.root = PathBuf::from(format!("{}/db", path));
+    loginfo(format!("cfg.root = {:?}", cfg.root).as_str());
+
+    NAKAMOTO_CONFIG.set(cfg).unwrap();
+    Ok(())
 }
 
 fn set_global_handle(handle: nakamoto::client::Handle<Waker>) {
-    let _ = HANDLE.set(Mutex::new(handle));
+    let mut global_handle = HANDLE.lock().unwrap();
+    *global_handle = Some(handle);
+}
+
+fn get_global_handle() -> nakamoto::client::Handle<Waker> {
+    let global_handle = HANDLE.lock().unwrap().clone();
+    global_handle.unwrap()
 }
 
 pub fn get_tip() -> Result<u32> {
-    let handle = HANDLE.get().unwrap().lock().unwrap();
+    let handle = get_global_handle();
 
     let res = handle.get_tip().unwrap();
     loginfo(format!("tip {}", res.0).as_str());
@@ -46,7 +58,7 @@ pub fn get_tip() -> Result<u32> {
 }
 
 pub fn get_peer_count() -> Result<u32> {
-    let handle = HANDLE.get().unwrap().lock().unwrap();
+    let handle = get_global_handle();
 
     let res = handle.get_peers(Services::default())?;
 
@@ -61,7 +73,7 @@ pub fn scan_blocks(
     electrum_client: electrum_client::Client,
     scan_key_scalar: Scalar,
 ) -> anyhow::Result<()> {
-    let handle = HANDLE.get().unwrap().lock().unwrap();
+    let handle = get_global_handle();
 
     loginfo("scanning blocks");
 
@@ -151,11 +163,8 @@ pub fn scan_blocks(
     Ok(())
 }
 
-pub fn start_nakamoto_client_and_set_handle(path: String) -> anyhow::Result<()> {
-    let mut cfg = Config::new(client::Network::Signet);
-
-    cfg.root = PathBuf::from(format!("{}/db", path));
-    loginfo(format!("cfg.root = {:?}", cfg.root).as_str());
+pub fn start_nakamoto_client() -> anyhow::Result<()> {
+    let cfg = NAKAMOTO_CONFIG.wait().clone();
 
     // Create a client using the above network reactor.
     type Reactor = nakamoto::net::poll::Reactor<net::TcpStream>;
@@ -166,11 +175,21 @@ pub fn start_nakamoto_client_and_set_handle(path: String) -> anyhow::Result<()> 
 
     loginfo("handle set");
     client.run(cfg).unwrap();
-    panic!("this should never be reached");
+    Ok(())
+}
+
+pub fn restart_nakamoto_client() -> Result<()> {
+    let handle = get_global_handle();
+
+    handle.shutdown()?;
+
+    loginfo("shutdown completed, restarting");
+
+    start_nakamoto_client()
 }
 
 // possible block has been found, scan the block
-pub fn scan_block(
+fn scan_block(
     sp_receiver: &Receiver,
     block: Block,
     mut map: HashMap<Script, PublicKey>,

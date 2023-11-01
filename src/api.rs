@@ -5,7 +5,7 @@ use crate::{
     constants::{LogEntry, ScanProgress, WalletStatus},
     db::{self},
     electrumclient::create_electrum_client,
-    nakamotoclient::{self, start_nakamoto_client_and_set_handle},
+    nakamotoclient,
     spclient::{self, get_birthday, get_sp_client},
     stream::{self, loginfo},
 };
@@ -35,10 +35,17 @@ pub fn setup(files_dir: String) {
     db::setup(files_dir.clone(), birthday).unwrap();
 
     loginfo("db has been setup");
+
+    nakamotoclient::setup(files_dir).unwrap();
+    loginfo("nakamoto config has been setup");
 }
 
-pub fn start_nakamoto(files_dir: String) {
-    start_nakamoto_client_and_set_handle(files_dir).unwrap();
+pub fn start_nakamoto() {
+    nakamotoclient::start_nakamoto_client().unwrap();
+}
+
+pub fn restart_nakamoto() {
+    nakamotoclient::restart_nakamoto_client().unwrap();
 }
 
 pub fn get_peer_count() -> u32 {

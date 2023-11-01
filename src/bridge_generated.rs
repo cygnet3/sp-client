@@ -95,17 +95,24 @@ fn wire_setup_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + Unwind
         },
     )
 }
-fn wire_start_nakamoto_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + UnwindSafe) {
+fn wire_start_nakamoto_impl(port_: MessagePort) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
             debug_name: "start_nakamoto",
             port: Some(port_),
             mode: FfiCallMode::Normal,
         },
-        move || {
-            let api_files_dir = files_dir.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(start_nakamoto(api_files_dir))
+        move || move |task_callback| Result::<_, ()>::Ok(start_nakamoto()),
+    )
+}
+fn wire_restart_nakamoto_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "restart_nakamoto",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
         },
+        move || move |task_callback| Result::<_, ()>::Ok(restart_nakamoto()),
     )
 }
 fn wire_get_peer_count_impl(port_: MessagePort) {
