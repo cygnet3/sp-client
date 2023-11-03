@@ -1,10 +1,10 @@
 [package]
-name = "rust"
+name = "sp_backend"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "rust"
+name = "sp_backend"
 crate-type = ["lib", "staticlib", "cdylib"]
 # crate-type = ["lib"]
 
