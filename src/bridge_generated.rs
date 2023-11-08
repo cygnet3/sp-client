@@ -72,16 +72,6 @@ fn wire_create_scan_progress_stream_impl(port_: MessagePort) {
         },
     )
 }
-fn wire_reset_wallet_impl(port_: MessagePort) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
-        WrapInfo {
-            debug_name: "reset_wallet",
-            port: Some(port_),
-            mode: FfiCallMode::Normal,
-        },
-        move || move |task_callback| Result::<_, ()>::Ok(reset_wallet()),
-    )
-}
 fn wire_setup_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + UnwindSafe) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
@@ -93,6 +83,16 @@ fn wire_setup_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + Unwind
             let api_files_dir = files_dir.wire2api();
             move |task_callback| Result::<_, ()>::Ok(setup(api_files_dir))
         },
+    )
+}
+fn wire_reset_wallet_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
+        WrapInfo {
+            debug_name: "reset_wallet",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(reset_wallet()),
     )
 }
 fn wire_start_nakamoto_impl(port_: MessagePort) {
@@ -158,14 +158,24 @@ fn wire_get_wallet_info_impl(port_: MessagePort) {
         move || move |task_callback| Result::<_, ()>::Ok(get_wallet_info()),
     )
 }
-fn wire_get_amount_impl(port_: MessagePort) {
+fn wire_get_birthday_impl(port_: MessagePort) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, u32, _>(
         WrapInfo {
-            debug_name: "get_amount",
+            debug_name: "get_birthday",
             port: Some(port_),
             mode: FfiCallMode::Normal,
         },
-        move || move |task_callback| Result::<_, ()>::Ok(get_amount()),
+        move || move |task_callback| Result::<_, ()>::Ok(get_birthday()),
+    )
+}
+fn wire_get_wallet_balance_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, u32, _>(
+        WrapInfo {
+            debug_name: "get_wallet_balance",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || move |task_callback| Result::<_, ()>::Ok(get_wallet_balance()),
     )
 }
 fn wire_get_receiving_address_impl(port_: MessagePort) {

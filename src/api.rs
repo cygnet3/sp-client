@@ -6,7 +6,7 @@ use crate::{
     db::{self},
     electrumclient::create_electrum_client,
     nakamotoclient,
-    spclient::{self, get_birthday, get_sp_client},
+    spclient::{self, get_sp_client},
     stream::{self, loginfo},
 };
 
@@ -20,17 +20,11 @@ pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
     stream::create_scan_progress_stream(s);
 }
 
-pub fn reset_wallet() {
-    let birthday = get_birthday().unwrap();
-    db::reset_scan_height(birthday).unwrap();
-    db::drop_owned_outpoints().unwrap();
-}
-
 pub fn setup(files_dir: String) {
-    loginfo("client setup");
     spclient::create_sp_client().unwrap();
+    loginfo("sp client has been setup");
 
-    let birthday = get_birthday().unwrap();
+    let birthday = spclient::get_birthday().unwrap();
     loginfo("db setup");
     db::setup(files_dir.clone(), birthday).unwrap();
 
@@ -38,6 +32,13 @@ pub fn setup(files_dir: String) {
 
     nakamotoclient::setup(files_dir).unwrap();
     loginfo("nakamoto config has been setup");
+}
+
+
+pub fn reset_wallet() {
+    let birthday = spclient::get_birthday().unwrap();
+    db::reset_scan_height(birthday).unwrap();
+    db::drop_owned_outpoints().unwrap();
 }
 
 pub fn start_nakamoto() {
@@ -73,7 +74,7 @@ pub fn scan_to_tip() {
 pub fn get_wallet_info() -> WalletStatus {
     let scanheight = db::get_scan_height().unwrap();
     let tip_height = nakamotoclient::get_tip().unwrap();
-    let amount = get_amount();
+    let amount = get_wallet_balance();
 
     WalletStatus {
         amount,
@@ -82,7 +83,11 @@ pub fn get_wallet_info() -> WalletStatus {
     }
 }
 
-pub fn get_amount() -> u32 {
+pub fn get_birthday() -> u32{
+    spclient::get_birthday().unwrap()
+}
+
+pub fn get_wallet_balance() -> u32 {
     db::get_sum_owned().unwrap()
 }
 
