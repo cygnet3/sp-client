@@ -72,7 +72,14 @@ fn wire_create_scan_progress_stream_impl(port_: MessagePort) {
         },
     )
 }
-fn wire_setup_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + UnwindSafe) {
+fn wire_setup_impl(
+    port_: MessagePort,
+    files_dir: impl Wire2Api<String> + UnwindSafe,
+    scan_sk: impl Wire2Api<String> + UnwindSafe,
+    spend_pk: impl Wire2Api<String> + UnwindSafe,
+    birthday: impl Wire2Api<u32> + UnwindSafe,
+    is_testnet: impl Wire2Api<bool> + UnwindSafe,
+) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
             debug_name: "setup",
@@ -81,7 +88,19 @@ fn wire_setup_impl(port_: MessagePort, files_dir: impl Wire2Api<String> + Unwind
         },
         move || {
             let api_files_dir = files_dir.wire2api();
-            move |task_callback| Result::<_, ()>::Ok(setup(api_files_dir))
+            let api_scan_sk = scan_sk.wire2api();
+            let api_spend_pk = spend_pk.wire2api();
+            let api_birthday = birthday.wire2api();
+            let api_is_testnet = is_testnet.wire2api();
+            move |task_callback| {
+                Result::<_, ()>::Ok(setup(
+                    api_files_dir,
+                    api_scan_sk,
+                    api_spend_pk,
+                    api_birthday,
+                    api_is_testnet,
+                ))
+            }
         },
     )
 }
@@ -211,6 +230,11 @@ where
     }
 }
 
+impl Wire2Api<bool> for bool {
+    fn wire2api(self) -> bool {
+        self
+    }
+}
 impl Wire2Api<u32> for u32 {
     fn wire2api(self) -> u32 {
         self

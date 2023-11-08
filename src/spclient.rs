@@ -9,23 +9,13 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 use anyhow::Result;
 
-const BIRTHDAY: u32 = 160000;
-const IS_TESTNET: bool = true;
-const SCAN_SK: &str = "0aa78769a8aada0e7df0a8710e4c740266c4b1d050e12d9703848fb03f6f1835";
-const SPEND_PK: &str = "02b4d7047ed9ec51b9f2ad9aad675495ac18f33f71ec9f777dd7133784919a71e0";
-
 lazy_static! {
     static ref SPCLIENT: OnceCell<SpClient> = OnceCell::new();
 }
 
-pub fn create_sp_client() -> Result<()> {
-    let birthday = BIRTHDAY;
-    let is_testnet = IS_TESTNET;
-    // let xprv_str =  XPRV_STR;
-    // let xprv: ExtendedPrivKey = ExtendedPrivKey::from_str(xprv_str).unwrap();
-
-    let scan_sk = SecretKey::from_str(SCAN_SK)?;
-    let spend_pk = PublicKey::from_str(SPEND_PK)?;
+pub fn create_sp_client(scan_sk: String, spend_pk: String, birthday: u32, is_testnet: bool) -> Result<()> {
+    let scan_sk = SecretKey::from_str(&scan_sk)?;
+    let spend_pk = PublicKey::from_str(&spend_pk)?;
 
     let spclient = SpClient::new(scan_sk, spend_pk, is_testnet, birthday)?;
 

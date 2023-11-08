@@ -20,14 +20,11 @@ pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
     stream::create_scan_progress_stream(s);
 }
 
-pub fn setup(files_dir: String) {
-    spclient::create_sp_client().unwrap();
+pub fn setup(files_dir: String, scan_sk: String, spend_pk: String, birthday: u32, is_testnet: bool) {
+    spclient::create_sp_client(scan_sk, spend_pk, birthday, is_testnet).unwrap();
     loginfo("sp client has been setup");
 
-    let birthday = spclient::get_birthday().unwrap();
-    loginfo("db setup");
     db::setup(files_dir.clone(), birthday).unwrap();
-
     loginfo("db has been setup");
 
     nakamotoclient::setup(files_dir).unwrap();

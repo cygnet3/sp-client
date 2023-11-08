@@ -17,8 +17,15 @@ pub extern "C" fn wire_create_scan_progress_stream(port_: i64) {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_setup(port_: i64, files_dir: *mut wire_uint_8_list) {
-    wire_setup_impl(port_, files_dir)
+pub extern "C" fn wire_setup(
+    port_: i64,
+    files_dir: *mut wire_uint_8_list,
+    scan_sk: *mut wire_uint_8_list,
+    spend_pk: *mut wire_uint_8_list,
+    birthday: u32,
+    is_testnet: bool,
+) {
+    wire_setup_impl(port_, files_dir, scan_sk, spend_pk, birthday, is_testnet)
 }
 
 #[no_mangle]
