@@ -1,3 +1,4 @@
+use bip39::Mnemonic;
 use bitcoin::{
     secp256k1::{PublicKey, Secp256k1, SecretKey},
     util::bip32::{DerivationPath, ExtendedPrivKey},
@@ -6,14 +7,19 @@ use once_cell::sync::OnceCell;
 use silentpayments::receiving::Receiver;
 use std::str::FromStr;
 
-use lazy_static::lazy_static;
 use anyhow::Result;
+use lazy_static::lazy_static;
 
 lazy_static! {
     static ref SPCLIENT: OnceCell<SpClient> = OnceCell::new();
 }
 
-pub fn create_sp_client(scan_sk: String, spend_pk: String, birthday: u32, is_testnet: bool) -> Result<()> {
+pub fn create_sp_client(
+    scan_sk: String,
+    spend_pk: String,
+    birthday: u32,
+    is_testnet: bool,
+) -> Result<()> {
     let scan_sk = SecretKey::from_str(&scan_sk)?;
     let spend_pk = PublicKey::from_str(&spend_pk)?;
 
@@ -24,10 +30,8 @@ pub fn create_sp_client(scan_sk: String, spend_pk: String, birthday: u32, is_tes
 }
 
 pub fn get_sp_client() -> &'static SpClient {
-
     SPCLIENT.wait()
 }
-
 
 pub fn get_receiving_address() -> Result<String> {
     let client = get_sp_client();
@@ -52,7 +56,12 @@ pub struct SpClient {
 }
 
 impl SpClient {
-    pub fn new(scan_privkey: SecretKey, spend_pubkey: PublicKey, is_testnet: bool, birthday: u32) -> Result<Self> {
+    pub fn new(
+        scan_privkey: SecretKey,
+        spend_pubkey: PublicKey,
+        is_testnet: bool,
+        birthday: u32,
+    ) -> Result<Self> {
         let secp = Secp256k1::new();
         let scan_pubkey = scan_privkey.public_key(&secp);
         let sp_receiver = Receiver::new(0, scan_pubkey, spend_pubkey, is_testnet)?;
@@ -66,11 +75,22 @@ impl SpClient {
     }
 }
 
+pub fn get_keys_from_seedphrase(
+    seedphrase: &str,
+    passphrase: &str,
+) -> Result<(SecretKey, PublicKey, PublicKey)> {
+    let mnemonic = Mnemonic::parse(seedphrase)?;
+    let seed = mnemonic.to_seed(passphrase);
 
-fn _get_keys_from_xprv(xprv: ExtendedPrivKey, is_testnet: bool) -> Result<(SecretKey, PublicKey, PublicKey)> {
-    let (scan_path, spend_path) = match is_testnet {
-        true => ("m/352h/1h/0h/1h/0", "m/352h/1h/0h/0h/0"),
-        false => ("m/352h/0h/0h/1h/0", "m/352h/0h/0h/0h/0"),
+    let xprv = ExtendedPrivKey::new_master(bitcoin::Network::Signet, &seed)?;
+
+    get_keys_from_xprv(xprv)
+}
+
+fn get_keys_from_xprv(xprv: ExtendedPrivKey) -> Result<(SecretKey, PublicKey, PublicKey)> {
+    let (scan_path, spend_path) = match xprv.network {
+        bitcoin::Network::Bitcoin => ("m/352h/0h/0h/1h/0", "m/352h/0h/0h/0h/0"),
+        _ => ("m/352h/1h/0h/1h/0", "m/352h/1h/0h/0h/0"),
     };
 
     let secp = Secp256k1::new();
@@ -85,4 +105,3 @@ fn _get_keys_from_xprv(xprv: ExtendedPrivKey, is_testnet: bool) -> Result<(Secre
 
     Ok((scan_privkey, scan_pubkey, spend_pubkey))
 }
-

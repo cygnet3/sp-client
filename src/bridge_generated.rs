@@ -207,6 +207,22 @@ fn wire_get_receiving_address_impl(port_: MessagePort) {
         move || move |task_callback| Result::<_, ()>::Ok(get_receiving_address()),
     )
 }
+fn wire_get_keys_from_seed_impl(
+    port_: MessagePort,
+    seedphrase: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (String, String), _>(
+        WrapInfo {
+            debug_name: "get_keys_from_seed",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_seedphrase = seedphrase.wire2api();
+            move |task_callback| Result::<_, ()>::Ok(get_keys_from_seed(api_seedphrase))
+        },
+    )
+}
 // Section: wrapper structs
 
 // Section: static checks

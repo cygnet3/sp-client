@@ -78,6 +78,11 @@ pub extern "C" fn wire_get_receiving_address(port_: i64) {
     wire_get_receiving_address_impl(port_)
 }
 
+#[no_mangle]
+pub extern "C" fn wire_get_keys_from_seed(port_: i64, seedphrase: *mut wire_uint_8_list) {
+    wire_get_keys_from_seed_impl(port_, seedphrase)
+}
+
 // Section: allocate functions
 
 #[no_mangle]

@@ -17,20 +17,25 @@ pub fn setup(path: String, birthday: u32) -> Result<()> {
             reset_owned_outputs_from_block_height(scanheight.scanheight.unwrap()).unwrap()
         }
         // if no scan height is known, reset it and set it to the birthday
-        None => reset_scan_height(birthday)?,
+        None => set_scan_height(birthday)?,
     }
     // reset_scan_height()?;
     // drop_owned_outpoints()?;
     Ok(())
 }
 
-pub fn reset_scan_height(scan_height: u32) -> Result<()> {
-    execute!("DELETE FROM scanheight")?;
+pub fn set_scan_height(scan_height: u32) -> Result<()> {
+    // execute!("DELETE FROM scanheight")?;
     let _rowid = ScanHeight {
         scanheight: Some(scan_height),
         ..Default::default()
     }
     .insert()?;
+    Ok(())
+}
+
+pub fn delete_scan_height() -> Result<()> {
+    execute!("DELETE FROM scanheight")?;
     Ok(())
 }
 

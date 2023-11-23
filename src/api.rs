@@ -1,4 +1,4 @@
-use bitcoin::secp256k1::Scalar;
+use bitcoin::secp256k1::{PublicKey, Scalar, SecretKey};
 use flutter_rust_bridge::StreamSink;
 
 use crate::{
@@ -20,7 +20,13 @@ pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
     stream::create_scan_progress_stream(s);
 }
 
-pub fn setup(files_dir: String, scan_sk: String, spend_pk: String, birthday: u32, is_testnet: bool) {
+pub fn setup(
+    files_dir: String,
+    scan_sk: String,
+    spend_pk: String,
+    birthday: u32,
+    is_testnet: bool,
+) {
     spclient::create_sp_client(scan_sk, spend_pk, birthday, is_testnet).unwrap();
     loginfo("sp client has been setup");
 
@@ -31,10 +37,8 @@ pub fn setup(files_dir: String, scan_sk: String, spend_pk: String, birthday: u32
     loginfo("nakamoto config has been setup");
 }
 
-
 pub fn reset_wallet() {
-    let birthday = spclient::get_birthday().unwrap();
-    db::reset_scan_height(birthday).unwrap();
+    db::delete_scan_height().unwrap();
     db::drop_owned_outpoints().unwrap();
 }
 
@@ -80,7 +84,7 @@ pub fn get_wallet_info() -> WalletStatus {
     }
 }
 
-pub fn get_birthday() -> u32{
+pub fn get_birthday() -> u32 {
     spclient::get_birthday().unwrap()
 }
 
@@ -92,4 +96,13 @@ pub fn get_receiving_address() -> String {
     let sp_address = spclient::get_receiving_address().unwrap();
 
     sp_address
+}
+
+pub fn get_keys_from_seed(seedphrase: String) -> (String, String) {
+    let (scan_sk, _scan_pk, spend_pk) = spclient::get_keys_from_seedphrase(&seedphrase, "").unwrap();
+
+    let scan_sk_hex = hex::encode(scan_sk.secret_bytes());
+    let spend_pk_hex = hex::encode(spend_pk.serialize());
+
+    (scan_sk_hex, spend_pk_hex)
 }
