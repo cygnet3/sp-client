@@ -37,10 +37,10 @@ pub fn get_receiving_address() -> Result<String> {
     Ok(receiver.get_receiving_address())
 }
 
-pub fn get_birthday() -> Result<u32> {
+pub fn get_birthday() -> u32 {
     let client = get_sp_client();
     let birthday = client.birthday;
-    Ok(birthday)
+    birthday
 }
 
 #[derive(Debug)]
