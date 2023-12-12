@@ -28,37 +28,43 @@ lazy_static! {
     static ref NAKAMOTO_CONFIG: OnceCell<Config> = OnceCell::new();
 }
 
-pub fn setup(path: String) -> anyhow::Result<()> {
+pub fn setup(path: String) {
     let mut cfg = Config::new(client::Network::Signet);
 
     cfg.root = PathBuf::from(format!("{}/db", path));
     loginfo(format!("cfg.root = {:?}", cfg.root).as_str());
 
-    NAKAMOTO_CONFIG.set(cfg).unwrap();
+    match NAKAMOTO_CONFIG.set(cfg) {
+        Ok(_) => (),
+        Err(_) => { loginfo("NAKAMOTO_CONFIG already set") }
+    }
+}
+
+fn set_global_handle(handle: nakamoto::client::Handle<Waker>) -> Result<()> {
+    let mut global_handle = HANDLE.lock()
+        .map_err(|e| anyhow::Error::msg(format!("Lock poisoned: {:?}", e)))?;
+    *global_handle = Some(handle);
     Ok(())
 }
 
-fn set_global_handle(handle: nakamoto::client::Handle<Waker>) {
-    let mut global_handle = HANDLE.lock().unwrap();
-    *global_handle = Some(handle);
-}
+fn get_global_handle() -> Result<nakamoto::client::Handle<Waker>> {
+    let global_handle = HANDLE.lock()
+        .map_err(|e| anyhow::Error::msg(format!("Lock poisoned: {:?}", e)))?;
 
-fn get_global_handle() -> nakamoto::client::Handle<Waker> {
-    let global_handle = HANDLE.lock().unwrap().clone();
-    global_handle.unwrap()
+    global_handle.clone().ok_or_else(|| anyhow::Error::msg("Global handle is None"))
 }
 
 pub fn get_tip() -> Result<u32> {
-    let handle = get_global_handle();
+    let handle = get_global_handle()?;
 
-    let res = handle.get_tip().unwrap();
+    let res = handle.get_tip()?;
     loginfo(format!("tip {}", res.0).as_str());
 
     Ok(res.0 as u32)
 }
 
 pub fn get_peer_count() -> Result<u32> {
-    let handle = get_global_handle();
+    let handle = get_global_handle()?;
 
     let res = handle.get_peers(Services::default())?;
 
@@ -73,7 +79,7 @@ pub fn scan_blocks(
     electrum_client: electrum_client::Client,
     scan_key_scalar: Scalar,
 ) -> anyhow::Result<()> {
-    let handle = get_global_handle();
+    let handle = get_global_handle()?;
 
     loginfo("scanning blocks");
 
@@ -131,14 +137,14 @@ pub fn scan_blocks(
                         .map_err(|x| Error::new(x))
                 })
                 .collect();
-            let map = calculate_script_pubkeys(shared_secret_vec?, &sp_receiver);
+            let map = calculate_script_pubkeys(shared_secret_vec?, &sp_receiver)?;
 
             let found =
-                search_filter_for_script_pubkeys(map.keys().cloned().collect(), blkfilter, blkhash);
+                search_filter_for_script_pubkeys(map.keys().cloned().collect(), blkfilter, blkhash)?;
             if found {
                 handle.request_block(&blkhash)?;
-                let (blk, _) = blkchannel.recv().unwrap();
-                let res = scan_block(&sp_receiver, blk, map);
+                let (blk, _) = blkchannel.recv()?;
+                let res = scan_block(&sp_receiver, blk, map)?;
 
                 loginfo(format!("outputs found:{:?}", res).as_str());
 
@@ -159,7 +165,7 @@ pub fn scan_blocks(
             // println!("no tweak data for this block");
         }
     }
-    update_scan_height(end).unwrap();
+    update_scan_height(end)?;
     Ok(())
 }
 
@@ -171,15 +177,15 @@ pub fn start_nakamoto_client() -> anyhow::Result<()> {
     let client = Client::<Reactor>::new()?;
     let handle = client.handle();
 
-    set_global_handle(handle);
+    set_global_handle(handle)?;
 
     loginfo("handle set");
-    client.run(cfg).unwrap();
+    client.run(cfg)?;
     Ok(())
 }
 
 pub fn restart_nakamoto_client() -> Result<()> {
-    let handle = get_global_handle();
+    let handle = get_global_handle()?;
 
     handle.shutdown()?;
 
@@ -193,7 +199,7 @@ fn scan_block(
     sp_receiver: &Receiver,
     block: Block,
     mut map: HashMap<Script, PublicKey>,
-) -> Vec<(u64, Script)> {
+) -> Result<Vec<(u64, Script)>> {
     let mut res: Vec<(u64, Script)> = vec![];
 
     for (_, tx) in block.txdata.into_iter().enumerate() {
@@ -203,17 +209,17 @@ fn scan_block(
         }
         // collect all taproot outputs from transaction
         // todo improve
-        let mut outputs_map = get_tx_with_outpoints(&tx.output);
+        let mut outputs_map = get_tx_with_outpoints(&tx.output)?;
 
         if let (Some(tweak_data), scripts) =
             get_tx_taproot_scripts_and_tweak_data(tx.output, &mut map)
         {
-            let xonlypubkeys = get_xonly_pubkeys_from_scripts(scripts);
+            let xonlypubkeys = get_xonly_pubkeys_from_scripts(scripts)?;
             let outputs = sp_receiver
                 .scan_transaction(&tweak_data, xonlypubkeys)
-                .unwrap();
+                ?;
             for (output, _) in outputs {
-                let txout = outputs_map.remove(&output).unwrap();
+                let txout = outputs_map.remove(&output).ok_or_else(|| anyhow::Error::msg("Output not in transaction"))?;
 
                 let amt = txout.value;
                 let script = txout.script_pubkey;
@@ -223,7 +229,7 @@ fn scan_block(
         }
     }
 
-    res
+    Ok(res)
 }
 
 fn is_eligible_sp_transaction(tx: &Transaction) -> bool {
@@ -231,17 +237,18 @@ fn is_eligible_sp_transaction(tx: &Transaction) -> bool {
     tx.output.iter().any(|x| x.script_pubkey.is_v1_p2tr())
 }
 
-fn get_xonly_pubkeys_from_scripts(scripts: Vec<Script>) -> Vec<XOnlyPublicKey> {
+fn get_xonly_pubkeys_from_scripts(scripts: Vec<Script>) -> Result<Vec<XOnlyPublicKey>> {
     scripts
         .into_iter()
         .map(|x| {
             if !x.is_v1_p2tr() {
-                panic!("Only taproot allowed");
+                return Err(anyhow::Error::msg("Only taproot allowed"));
             }
             let output = x.into_bytes();
-            XOnlyPublicKey::from_slice(&output[2..]).unwrap()
+            XOnlyPublicKey::from_slice(&output[2..])
+                .map_err(|e| anyhow::Error::msg(format!("Error parsing XOnlyPublicKey: {}", e)))
         })
-        .collect()
+        .collect::<Result<Vec<XOnlyPublicKey>>>()
 }
 
 fn get_tx_taproot_scripts_and_tweak_data(
@@ -273,7 +280,7 @@ fn get_tx_taproot_scripts_and_tweak_data(
 fn calculate_script_pubkeys(
     tweak_data_vec: Vec<PublicKey>,
     sp_receiver: &Receiver,
-) -> HashMap<Script, PublicKey> {
+) -> Result<HashMap<Script, PublicKey>> {
     let mut res = HashMap::new();
 
     for tweak_data in tweak_data_vec {
@@ -281,35 +288,36 @@ fn calculate_script_pubkeys(
         // we only need to look for the case n=0, we can look for the others if this matches
         let script_bytes = sp_receiver
             .get_script_bytes_from_shared_secret(&tweak_data)
-            .unwrap();
+            ?;
 
         let script = Script::from(script_bytes.to_vec());
         res.insert(script, tweak_data);
     }
-    res
+    Ok(res)
 }
 
-fn get_tx_with_outpoints(txout: &Vec<TxOut>) -> HashMap<XOnlyPublicKey, TxOut> {
+fn get_tx_with_outpoints(txout: &Vec<TxOut>) -> Result<HashMap<XOnlyPublicKey, TxOut>> {
     let mut res = HashMap::new();
 
     for x in txout {
         let script = &x.script_pubkey;
         if script.is_v1_p2tr() {
             let output = script.clone().into_bytes();
-            let pk = XOnlyPublicKey::from_slice(&output[2..]).unwrap();
+            let pk = XOnlyPublicKey::from_slice(&output[2..])
+                .map_err(|e| anyhow::Error::msg(format!("Error parsing XOnlyPublicKey: {}", e)))?;
             res.insert(pk, x.clone());
         }
     }
-    res
+    Ok(res)
 }
 
 fn search_filter_for_script_pubkeys(
     scriptpubkeys: Vec<Script>,
     blkfilter: BlockFilter,
     blkhash: BlockHash,
-) -> bool {
+) -> Result<bool> {
     if scriptpubkeys.len() == 0 {
-        return false;
+        return Ok(false);
     }
 
     // get bytes of every script
@@ -319,7 +327,7 @@ fn search_filter_for_script_pubkeys(
     let mut query = script_bytes.iter().map(|x| x.as_slice());
 
     // match our query against the block filter
-    let found = blkfilter.match_any(&blkhash, &mut query).unwrap();
+    let found = blkfilter.match_any(&blkhash, &mut query)?;
 
-    found
+    Ok(found)
 }
