@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use bitcoin::secp256k1::Scalar;
 use flutter_rust_bridge::StreamSink;
 
@@ -6,9 +8,11 @@ use crate::{
     db::{self},
     electrumclient::create_electrum_client,
     nakamotoclient,
-    spclient::{self, get_sp_client},
+    spclient::{self, get_sp_client, derive_keys_from_mnemonic},
     stream::{self, loginfo},
 };
+
+const PASSPHRASE: &str = ""; // no passphrase for now
 
 pub fn create_log_stream(s: StreamSink<LogEntry>) {
     stream::create_log_stream(s);
@@ -20,9 +24,36 @@ pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
     stream::create_scan_progress_stream(s);
 }
 
-pub fn setup(files_dir: String, scan_sk: String, spend_pk: String, birthday: u32, is_testnet: bool) -> Result<(), String> {
-    spclient::create_sp_client(scan_sk, spend_pk, birthday, is_testnet)
-        .map_err(|e| e.to_string())?;
+pub fn setup(
+    files_dir: String,
+    mnemonic: String,
+    scan_hex: String,
+    spend_hex: String,
+    birthday: u32,
+    is_testnet: bool,
+) -> Result<(), String> {
+    const ERR_MSG: &str = "Must provide either mnemonic or scan/spend secret key";
+    let _: Result<(), String> = match (mnemonic.is_empty(), scan_hex.is_empty(), spend_hex.is_empty()) {
+        (true, false, false) => {
+            // We directly restore with the keys
+            let scan_sk = bitcoin::secp256k1::SecretKey::from_str(&scan_hex)
+                .map_err(|e| e.to_string())?;
+            let spend_sk = bitcoin::secp256k1::SecretKey::from_str(&spend_hex)
+                .map_err(|e| e.to_string())?;
+            spclient::create_sp_client(scan_sk, spend_sk, birthday, is_testnet)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        },
+        (false, true, true) => {
+            // We restore from seed
+            let (scan_sk, spend_sk) = derive_keys_from_mnemonic(&mnemonic, PASSPHRASE, is_testnet)
+                .map_err(|e| e.to_string())?;
+            spclient::create_sp_client(scan_sk, spend_sk, birthday, is_testnet)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        },
+        _ => Err(ERR_MSG),
+    }?;
     loginfo("sp client has been setup");
 
     db::setup(files_dir.clone(), birthday)
@@ -65,7 +96,7 @@ pub fn scan_next_n_blocks(n: u32) -> Result<(), String> {
     let sp_client = get_sp_client();
 
     let sp_receiver = &sp_client.sp_receiver;
-    let scan_sk = sp_client.scan_privkey;
+    let scan_sk = sp_client.scan_sk;
 
     let electrum_client = create_electrum_client()
         .map_err(|e| e.to_string())?;
