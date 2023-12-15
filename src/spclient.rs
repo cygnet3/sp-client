@@ -1,76 +1,134 @@
 use bip39::Mnemonic;
 use bitcoin::{
-    secp256k1::{Secp256k1, SecretKey},
+    secp256k1::{Secp256k1, SecretKey, ONE_KEY},
     util::bip32::{DerivationPath, ExtendedPrivKey},
-    Network,
+    Network, OutPoint, Script, Txid,
 };
-use once_cell::sync::OnceCell;
+use serde::{Serialize, Deserialize};
 use silentpayments::receiving::Receiver;
 use std::str::FromStr;
 
-use lazy_static::lazy_static;
 use anyhow::Result;
 
-lazy_static! {
-    static ref SPCLIENT: OnceCell<SpClient> = OnceCell::new();
+use crate::db::FileWriter;
+
+pub struct ScanProgress {
+    pub start: u32,
+    pub current: u32,
+    pub end: u32,
 }
 
-pub fn create_sp_client(
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct OwnedOutput {
+    pub txoutpoint: OutPoint, 
+    pub blockheight: u32,
+    pub tweak: String,
+    pub amount: u64,
+    pub script: Script,
+    pub spent: bool,
+    pub spent_by: Option<Txid>
+}
+
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct SpClient {
+    pub label: String,
     scan_sk: SecretKey,
     spend_sk: SecretKey,
-    birthday: u32,
-    is_testnet: bool,
-) -> Result<()> {
-    let spclient = SpClient::new(scan_sk, spend_sk, is_testnet, birthday)?;
-
-    let _ = SPCLIENT.set(spclient);
-    Ok(())
-}
-
-pub fn get_sp_client() -> &'static SpClient {
-    SPCLIENT.wait()
-}
-
-pub fn get_receiving_address() -> Result<String> {
-    let client = get_sp_client();
-
-    let receiver = &client.sp_receiver;
-
-    Ok(receiver.get_receiving_address())
-}
-
-pub fn get_birthday() -> u32 {
-    let client = get_sp_client();
-    let birthday = client.birthday;
-    birthday
-}
-
-#[derive(Debug)]
-pub struct SpClient {
-    pub scan_sk: SecretKey,
-    pub spend_sk: SecretKey,
     pub sp_receiver: Receiver,
     pub birthday: u32,
+    pub last_scan: u32,
+    pub total_amt: u64,
+    owned: Vec<OwnedOutput>,
+    writer: FileWriter,
 }
 
 impl SpClient {
     pub fn new(
+        label: String,
         scan_sk: SecretKey,
         spend_sk: SecretKey,
-        is_testnet: bool,
         birthday: u32,
+        is_testnet: bool,
+        path: String,
     ) -> Result<Self> {
         let secp = Secp256k1::signing_only();
-        let spend_pubkey = spend_sk.public_key(&secp);
         let scan_pubkey = scan_sk.public_key(&secp);
+        let spend_pubkey = spend_sk.public_key(&secp);
         let sp_receiver = Receiver::new(0, scan_pubkey, spend_pubkey, is_testnet)?;
+        let writer = FileWriter::new(path, label.clone())?;
 
         Ok(Self {
+            label,
             scan_sk,
-            spend_sk,
             sp_receiver,
             birthday,
+            last_scan: birthday,
+            total_amt: 0,
+            owned: vec![],
+            spend_sk,
+            writer
         })
+    }
+
+    pub fn try_init_from_disk(label: String, path: String) -> Result<SpClient> {
+        let empty = SpClient::new(
+            label,
+            ONE_KEY,
+            ONE_KEY,
+            0,
+            false,
+            path,
+        )?;
+
+        empty.retrieve_from_disk()
+    }
+
+    pub fn update_last_scan(&mut self, scan_height: u32) {
+        self.last_scan = scan_height;
+    }
+
+    pub fn get_total_amt(&mut self) -> u64 {
+        self.total_amt = self.owned.iter()
+            .filter(|x| !x.spent)
+            .fold(0, |acc, x| acc + x.amount);
+        self.total_amt
+    }
+
+    pub fn extend_owned(&mut self, owned: Vec<OwnedOutput>) {
+        self.owned.extend(owned.into_iter());
+    }
+
+    pub fn list_outpoints(&self) -> Vec<OwnedOutput> {
+        self.owned.clone()
+    }
+
+    pub fn reset_from_blockheight(self, blockheight: u32) -> Self {
+        let mut new = self.clone();
+        new.owned = vec![];
+        new.owned = self.owned.into_iter()
+            .filter(|o| o.blockheight <= blockheight)
+            .collect();
+        new.last_scan = blockheight;
+        new.get_total_amt();
+
+        new
+    }
+
+    pub fn save_to_disk(&self) -> Result<()> {
+        self.writer.write_to_file(self)
+    }
+
+    pub fn retrieve_from_disk(self) -> Result<Self> {
+        self.writer.read_from_file()
+    }
+
+    pub fn get_receiving_address(&self) -> String {
+        self.sp_receiver.get_receiving_address()
+    }
+    
+    pub fn get_scan_key(&self) -> SecretKey {
+        self.scan_sk.clone()
     }
 }
 
