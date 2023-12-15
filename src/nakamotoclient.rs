@@ -2,9 +2,8 @@ use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::Mutex};
 
 use anyhow::{Error, Result};
 use bitcoin::{
-    secp256k1::{PublicKey, Scalar, Secp256k1},
-    util::bip158::BlockFilter,
-    Block, BlockHash, Script, Transaction, TxOut, XOnlyPublicKey,
+    secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
+    Block, Script, TxOut, XOnlyPublicKey, OutPoint,
 };
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
@@ -17,9 +16,8 @@ use once_cell::sync::OnceCell;
 use silentpayments::receiving::Receiver;
 
 use crate::{
-    constants::ScanProgress,
-    db::{self, insert_outpoint, update_scan_height},
-    stream::{loginfo, send_amount_update, send_scan_progress},
+    spclient::{OwnedOutput, ScanProgress, SpClient},
+    stream::{loginfo, send_scan_progress},
 };
 
 lazy_static! {
@@ -75,9 +73,8 @@ pub fn get_peer_count() -> Result<u32> {
 
 pub fn scan_blocks(
     mut n_blocks_to_scan: u32,
-    sp_receiver: &Receiver,
+    mut sp_client: SpClient,
     electrum_client: electrum_client::Client,
-    scan_key_scalar: Scalar,
 ) -> anyhow::Result<()> {
     let handle = get_global_handle()?;
 
@@ -87,7 +84,7 @@ pub fn scan_blocks(
     let filterchannel = handle.filters();
     let blkchannel = handle.blocks();
 
-    let scan_height = db::get_scan_height()?;
+    let scan_height = sp_client.last_scan;
     let tip_height = handle.get_tip()?.0 as u32;
 
     // 0 means scan to tip
@@ -105,13 +102,16 @@ pub fn scan_blocks(
     };
 
     if start > end {
-        return Ok(());
+        return Err(Error::msg("Start height can't be higher than end"));
     }
 
     loginfo(format!("start: {} end: {}", start, end).as_str());
     handle.request_filters(start as u64..=end as u64)?;
 
     let mut tweak_data_map = electrum_client.sp_tweaks(start as usize)?;
+
+    let scan_key_scalar = Scalar::from(sp_client.get_scan_key());
+    let sp_receiver = sp_client.sp_receiver.clone();
 
     for n in start..=end {
         if n % 10 == 0 || n == end {
@@ -124,35 +124,35 @@ pub fn scan_blocks(
 
         let (blkfilter, blkhash, blkheight) = filterchannel.recv()?;
 
-        let tweak_data_vec = tweak_data_map.remove(&(blkheight as u32));
-        if let Some(tweak_data_vec) = tweak_data_vec {
-            let tweak_data_vec: Result<Vec<PublicKey>> = tweak_data_vec
+        if let Some(tweak_data_vec) = tweak_data_map.remove(&(blkheight as u32)) {
+            let shared_secrets: Result<Vec<PublicKey>> = tweak_data_vec
                 .into_iter()
-                .map(|x| PublicKey::from_str(&x).map_err(|x| Error::new(x)))
-                .collect();
-            let shared_secret_vec: Result<Vec<PublicKey>> = tweak_data_vec?
-                .into_iter()
-                .map(|x| {
+                .map(|s| {
+                    let x = PublicKey::from_str(&s).map_err(|e| Error::new(e))?;
                     x.mul_tweak(&secp, &scan_key_scalar)
-                        .map_err(|x| Error::new(x))
+                        .map_err(|e| Error::new(e))
                 })
                 .collect();
-            let map = calculate_script_pubkeys(shared_secret_vec?, &sp_receiver)?;
+            let shared_secrets = shared_secrets?;
 
-            let found =
-                search_filter_for_script_pubkeys(map.keys().cloned().collect(), blkfilter, blkhash)?;
+            let candidate_spks: Result<Vec<Script>, _> = shared_secrets
+                .iter()
+                .map(|s| {
+                    sp_receiver
+                        .get_script_bytes_from_shared_secret(s)
+                        .map(|bytes| Script::from(bytes.to_vec()))
+                })
+                .collect();
+            let candidate_spks = candidate_spks?;
+
+            let found = blkfilter.match_any(&blkhash, &mut candidate_spks.iter().map(|spk| spk.as_bytes()))?;
             if found {
                 handle.request_block(&blkhash)?;
                 let (blk, _) = blkchannel.recv()?;
-                let res = scan_block(&sp_receiver, blk, map)?;
+                let owned = scan_block(&sp_receiver, blk, candidate_spks.into_iter().zip(shared_secrets).collect())?;
 
-                loginfo(format!("outputs found:{:?}", res).as_str());
+                sp_client.extend_owned(owned);
 
-                for r in res {
-                    insert_outpoint(blkheight, r.0, r.1)?;
-                }
-                let amount = db::get_sum_owned()?;
-                send_amount_update(amount);
                 send_scan_progress(ScanProgress {
                     start,
                     current: n,
@@ -165,7 +165,8 @@ pub fn scan_blocks(
             // println!("no tweak data for this block");
         }
     }
-    update_scan_height(end)?;
+    // update last_scan height
+    sp_client.update_last_scan(end);
     Ok(())
 }
 
@@ -198,136 +199,70 @@ pub fn restart_nakamoto_client() -> Result<()> {
 fn scan_block(
     sp_receiver: &Receiver,
     block: Block,
-    mut map: HashMap<Script, PublicKey>,
-) -> Result<Vec<(u64, Script)>> {
-    let mut res: Vec<(u64, Script)> = vec![];
+    spk2secret: HashMap<Script, PublicKey>,
+) -> Result<Vec<OwnedOutput>> {
+    let blkheight = block.bip34_block_height()?;
+    let mut res: Vec<OwnedOutput> = vec![];
 
-    for (_, tx) in block.txdata.into_iter().enumerate() {
-        if !is_eligible_sp_transaction(&tx) {
-            // println!("not a valid tx");
-            continue;
-        }
+    for tx in block.txdata.into_iter() {
+        let txid = tx.txid();
+
         // collect all taproot outputs from transaction
-        // todo improve
-        let mut outputs_map = get_tx_with_outpoints(&tx.output)?;
+        let p2tr_outs: Vec<(usize, TxOut)> = tx.output
+            .into_iter()
+            .enumerate()
+            .filter(|(_, o)| o.script_pubkey.is_v1_p2tr())
+            .collect();
 
-        if let (Some(tweak_data), scripts) =
-            get_tx_taproot_scripts_and_tweak_data(tx.output, &mut map)
-        {
-            let xonlypubkeys = get_xonly_pubkeys_from_scripts(scripts)?;
-            let outputs = sp_receiver
-                .scan_transaction(&tweak_data, xonlypubkeys)
-                ?;
-            for (output, _) in outputs {
-                let txout = outputs_map.remove(&output).ok_or_else(|| anyhow::Error::msg("Output not in transaction"))?;
+        if p2tr_outs.is_empty() { continue }; // no taproot output
 
-                let amt = txout.value;
-                let script = txout.script_pubkey;
-
-                res.push((amt, script));
+        let mut secret: Option<PublicKey> = None;
+        // Does this transaction contains one of the outputs we already found?
+        for spk in p2tr_outs.iter().map(|(_, o)| &o.script_pubkey) {
+            if let Some(s) = spk2secret.get(spk) {
+                // we might have at least one output in this transaction
+                secret = Some(*s);
+                break;
             }
         }
-    }
 
-    Ok(res)
-}
+        if secret.is_none() { continue }; // we don't have a secret that matches any of the keys
 
-fn is_eligible_sp_transaction(tx: &Transaction) -> bool {
-    // we check if the output has a taproot output
-    tx.output.iter().any(|x| x.script_pubkey.is_v1_p2tr())
-}
+        // Now we can just run sp_receiver on all the p2tr outputs
+        let xonlykeys: Result<Vec<XOnlyPublicKey>> = p2tr_outs
+            .iter()
+            .map(|(_, o)| {
+                XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..])
+                    .map_err(|e| Error::new(e))
+            })
+            .collect();
 
-fn get_xonly_pubkeys_from_scripts(scripts: Vec<Script>) -> Result<Vec<XOnlyPublicKey>> {
-    scripts
-        .into_iter()
-        .map(|x| {
-            if !x.is_v1_p2tr() {
-                return Err(anyhow::Error::msg("Only taproot allowed"));
+        let ours = sp_receiver.scan_transaction(&secret.unwrap(), xonlykeys?)?;
+        res.extend(p2tr_outs.iter().filter_map(|(i, o)| {
+            match XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..]) {
+                Ok(key) => {
+                    if let Some(scalar) = ours.get(&key) {
+                        match SecretKey::from_slice(&scalar.to_be_bytes()) {
+                            Ok(tweak) => Some(OwnedOutput {
+                                txoutpoint: OutPoint { txid, vout: *i as u32 },
+                                blockheight: blkheight as u32,
+                                tweak: hex::encode(tweak.secret_bytes()),
+                                amount: o.value,
+                                script: o.script_pubkey.clone(),
+                                spent: false,
+                                spent_by: None,
+                            }),
+                            Err(_) => None,
+                        }
+                    } else {
+                        None
+                    }
+                }
+                Err(_) => None,
             }
-            let output = x.into_bytes();
-            XOnlyPublicKey::from_slice(&output[2..])
-                .map_err(|e| anyhow::Error::msg(format!("Error parsing XOnlyPublicKey: {}", e)))
-        })
-        .collect::<Result<Vec<XOnlyPublicKey>>>()
-}
+        }));
 
-fn get_tx_taproot_scripts_and_tweak_data(
-    txout: Vec<TxOut>,
-    map: &mut HashMap<Script, PublicKey>,
-) -> (Option<PublicKey>, Vec<Script>) {
-    let mut tweak_data = None;
-    let outputs: Vec<Script> = txout
-        .into_iter()
-        .filter_map(|x| {
-            let script = x.script_pubkey;
-
-            if let Some(found_tweak_data) = map.remove(&script) {
-                // this indicates we have found a tx with tweak data that we are looking for
-                // in the minimal case, this output belongs to us, but there may be more
-                tweak_data = Some(found_tweak_data);
-                Some(script)
-            } else if script.is_v1_p2tr() {
-                Some(script)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    (tweak_data, outputs)
-}
-
-fn calculate_script_pubkeys(
-    tweak_data_vec: Vec<PublicKey>,
-    sp_receiver: &Receiver,
-) -> Result<HashMap<Script, PublicKey>> {
-    let mut res = HashMap::new();
-
-    for tweak_data in tweak_data_vec {
-        // using sp lib to get taproot output
-        // we only need to look for the case n=0, we can look for the others if this matches
-        let script_bytes = sp_receiver
-            .get_script_bytes_from_shared_secret(&tweak_data)
-            ?;
-
-        let script = Script::from(script_bytes.to_vec());
-        res.insert(script, tweak_data);
     }
+
     Ok(res)
-}
-
-fn get_tx_with_outpoints(txout: &Vec<TxOut>) -> Result<HashMap<XOnlyPublicKey, TxOut>> {
-    let mut res = HashMap::new();
-
-    for x in txout {
-        let script = &x.script_pubkey;
-        if script.is_v1_p2tr() {
-            let output = script.clone().into_bytes();
-            let pk = XOnlyPublicKey::from_slice(&output[2..])
-                .map_err(|e| anyhow::Error::msg(format!("Error parsing XOnlyPublicKey: {}", e)))?;
-            res.insert(pk, x.clone());
-        }
-    }
-    Ok(res)
-}
-
-fn search_filter_for_script_pubkeys(
-    scriptpubkeys: Vec<Script>,
-    blkfilter: BlockFilter,
-    blkhash: BlockHash,
-) -> Result<bool> {
-    if scriptpubkeys.len() == 0 {
-        return Ok(false);
-    }
-
-    // get bytes of every script
-    let script_bytes: Vec<Vec<u8>> = scriptpubkeys.into_iter().map(|x| x.to_bytes()).collect();
-
-    // the query for nakamoto filters is a iterator over the script byte slices
-    let mut query = script_bytes.iter().map(|x| x.as_slice());
-
-    // match our query against the block filter
-    let found = blkfilter.match_any(&blkhash, &mut query)?;
-
-    Ok(found)
 }
