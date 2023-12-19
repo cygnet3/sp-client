@@ -1,5 +1,5 @@
 [package]
-name = "rust"
+name = "sp_backend"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,9 +8,13 @@ name = "rust"
 crate-type = ["lib", "staticlib", "cdylib"]
 # crate-type = ["lib"]
 
+[features]
+default = []
+flutter = ["dep:flutter_rust_bridge"]
+
 [dependencies]
 # anyhow = "1"
-flutter_rust_bridge = "1"
+flutter_rust_bridge = { version = "1", optional = true }
 nakamoto = { git = "https://github.com/cloudhead/nakamoto", branch = "master" }
 # bdk = { version = "0.28", default-features = false , features = ["std"] }
 silentpayments = { git = "https://github.com/cygnet3/rust-silentpayments", branch = "master" }
