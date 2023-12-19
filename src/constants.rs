@@ -1,12 +1,15 @@
 use serde::{Serialize, Deserialize};
 
+type SecretKeyString = String;
+type PublicKeyString = String;
+
 #[derive(Deserialize, Serialize)]
 pub enum WalletType {
     Mnemonic(String),
     // scan_sk_hex, spend_sk_hex
-    PrivateKeys((String, String)),
+    PrivateKeys(SecretKeyString, SecretKeyString),
     // scan_sk_hex, spend_pk_hex
-    ReadOnly((String, String)),
+    ReadOnly(SecretKeyString, PublicKeyString),
 }
 
 pub struct LogEntry {
