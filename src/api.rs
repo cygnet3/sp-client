@@ -4,7 +4,7 @@ use bitcoin::secp256k1::Scalar;
 use flutter_rust_bridge::StreamSink;
 
 use crate::{
-    constants::{LogEntry, ScanProgress, WalletStatus},
+    constants::{LogEntry, ScanProgress, WalletStatus, WalletType},
     db::{self},
     electrumclient::create_electrum_client,
     nakamotoclient,
@@ -26,34 +26,28 @@ pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
 
 pub fn setup(
     files_dir: String,
-    mnemonic: String,
-    scan_hex: String,
-    spend_hex: String,
+    wallet_type: WalletType,
     birthday: u32,
     is_testnet: bool,
 ) -> Result<(), String> {
-    const ERR_MSG: &str = "Must provide either mnemonic or scan/spend secret key";
-    match (mnemonic.is_empty(), scan_hex.is_empty(), spend_hex.is_empty()) {
-        (true, false, false) => {
-            // We directly restore with the keys
-            let scan_sk = bitcoin::secp256k1::SecretKey::from_str(&scan_hex)
-                .map_err(|e| e.to_string())?;
-            let spend_sk = bitcoin::secp256k1::SecretKey::from_str(&spend_hex)
-                .map_err(|e| e.to_string())?;
-            spclient::create_sp_client(scan_sk, spend_sk, birthday, is_testnet)
-                .map_err(|e| e.to_string())?;
-            Ok(())
-        },
-        (false, true, true) => {
-            // We restore from seed
+    match wallet_type {
+        WalletType::Mnemonic(mnemonic) => {
             let (scan_sk, spend_sk) = derive_keys_from_mnemonic(&mnemonic, PASSPHRASE, is_testnet)
                 .map_err(|e| e.to_string())?;
             spclient::create_sp_client(scan_sk, spend_sk, birthday, is_testnet)
                 .map_err(|e| e.to_string())?;
-            Ok(())
         },
-        _ => Err(ERR_MSG),
-    }?;
+        WalletType::PrivateKeys((scan_sk_hex, spend_sk_hex)) => {
+            let scan_sk = bitcoin::secp256k1::SecretKey::from_str(&scan_sk_hex)
+                .map_err(|e| e.to_string())?;
+            let spend_sk = bitcoin::secp256k1::SecretKey::from_str(&spend_sk_hex)
+                .map_err(|e| e.to_string())?;
+            spclient::create_sp_client(scan_sk, spend_sk, birthday, is_testnet)
+                .map_err(|e| e.to_string())?;
+        },
+        WalletType::ReadOnly(_) => return Err("readonly not yet implemented".into()),
+    };
+
     loginfo("sp client has been setup");
 
     db::setup(files_dir.clone(), birthday)

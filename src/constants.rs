@@ -1,7 +1,15 @@
 use bitcoin::Script;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use turbosql::Turbosql;
 
+#[derive(Deserialize, Serialize)]
+pub enum WalletType {
+    Mnemonic(String),
+    // scan_sk_hex, spend_sk_hex
+    PrivateKeys((String, String)),
+    // scan_sk_hex, spend_pk_hex
+    ReadOnly((String, String)),
+}
 
 pub struct LogEntry {
     // pub time_millis: i64,
