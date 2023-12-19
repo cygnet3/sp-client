@@ -33,7 +33,7 @@ pub fn setup(
     is_testnet: bool,
 ) -> Result<(), String> {
     const ERR_MSG: &str = "Must provide either mnemonic or scan/spend secret key";
-    let _: Result<(), String> = match (mnemonic.is_empty(), scan_hex.is_empty(), spend_hex.is_empty()) {
+    match (mnemonic.is_empty(), scan_hex.is_empty(), spend_hex.is_empty()) {
         (true, false, false) => {
             // We directly restore with the keys
             let scan_sk = bitcoin::secp256k1::SecretKey::from_str(&scan_hex)
@@ -42,7 +42,7 @@ pub fn setup(
                 .map_err(|e| e.to_string())?;
             spclient::create_sp_client(scan_sk, spend_sk, birthday, is_testnet)
                 .map_err(|e| e.to_string())?;
-            return Ok(());
+            Ok(())
         },
         (false, true, true) => {
             // We restore from seed
@@ -50,7 +50,7 @@ pub fn setup(
                 .map_err(|e| e.to_string())?;
             spclient::create_sp_client(scan_sk, spend_sk, birthday, is_testnet)
                 .map_err(|e| e.to_string())?;
-            return Ok(());
+            Ok(())
         },
         _ => Err(ERR_MSG),
     }?;
