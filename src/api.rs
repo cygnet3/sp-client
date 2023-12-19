@@ -7,7 +7,7 @@ use crate::{
     electrumclient::create_electrum_client,
     nakamotoclient,
     spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic},
-    stream::{self, loginfo},
+    stream::{self},
 };
 
 const PASSPHRASE: &str = ""; // no passphrase for now
@@ -35,17 +35,20 @@ pub fn setup(
     wallet_type: WalletType,
     birthday: u32,
     is_testnet: bool,
-) -> Result<(), String> {
+) -> Result<String, String> {
     match wallet_type {
         WalletType::Mnemonic(mnemonic) => {
-            let (scan_sk, spend_sk) = derive_keys_from_mnemonic(&mnemonic, PASSPHRASE, is_testnet)
+            // We restore from seed
+            let (mnemonic, scan_sk, spend_sk) = derive_keys_from_mnemonic(&mnemonic, PASSPHRASE, is_testnet)
                 .map_err(|e| e.to_string())?;
             let sp_client = SpClient::new(label, scan_sk, spend_sk, birthday, is_testnet, files_dir)
                 .map_err(|e| e.to_string())?;
             sp_client.save_to_disk()
                 .map_err(|e| e.to_string())?;
+            return Ok(mnemonic.to_string());
         },
         WalletType::PrivateKeys((scan_sk_hex, spend_sk_hex)) => {
+            // We directly restore with the keys
             let scan_sk = bitcoin::secp256k1::SecretKey::from_str(&scan_sk_hex)
                 .map_err(|e| e.to_string())?;
             let spend_sk = bitcoin::secp256k1::SecretKey::from_str(&spend_sk_hex)
@@ -54,16 +57,10 @@ pub fn setup(
                 .map_err(|e| e.to_string())?;
             sp_client.save_to_disk()
                 .map_err(|e| e.to_string())?;
+            return Ok("".to_owned());
         },
         WalletType::ReadOnly(_) => return Err("readonly not yet implemented".into()),
     };
-
-    loginfo("sp client has been setup");
-
-    nakamotoclient::setup(files_dir);
-    loginfo("nakamoto config has been setup");
-
-    Ok(())
 }
 
 /// Reset the last_scan of the wallet to its birthday, removing all outpoints
