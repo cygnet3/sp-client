@@ -140,15 +140,17 @@ pub fn derive_keys_from_mnemonic(
     seedphrase: &str,
     passphrase: &str,
     is_testnet: bool,
-) -> Result<(SecretKey, SecretKey)> {
-    let mnemonic = Mnemonic::parse(seedphrase)?;
+) -> Result<(Mnemonic, SecretKey, SecretKey)> {
+    let mnemonic = if seedphrase.is_empty() { Mnemonic::generate(12)? } else { Mnemonic::parse(seedphrase)? };
     let seed = mnemonic.to_seed(passphrase);
 
     let network = if is_testnet { Network::Testnet } else { Network::Bitcoin };
 
     let xprv = ExtendedPrivKey::new_master(network, &seed)?;
 
-    derive_keys_from_xprv(xprv)
+    let (scan_privkey, spend_privkey) = derive_keys_from_xprv(xprv)?;
+
+    Ok((mnemonic, scan_privkey, spend_privkey))
 }
 
 fn derive_keys_from_xprv(xprv: ExtendedPrivKey) -> Result<(SecretKey, SecretKey)> {
