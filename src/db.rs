@@ -1,6 +1,6 @@
-use std::{path::PathBuf, fs::File, str::FromStr, io::{Write, Read}};
+use std::{path::PathBuf, fs::{File, remove_file}, str::FromStr, io::{Write, Read}};
 
-use anyhow::Result;
+use anyhow::{Result, Error};
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -32,6 +32,11 @@ impl FileWriter {
         let data: T = serde_json::from_str(&contents)?;
 
         Ok(data)
+    }
+
+    pub fn delete(self) -> Result<()> {
+        remove_file(self.path)
+            .map_err(|e| Error::new(e))
     }
 }
 

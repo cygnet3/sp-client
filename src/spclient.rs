@@ -123,6 +123,10 @@ impl SpClient {
         self.writer.read_from_file()
     }
 
+    pub fn delete_from_disk(self) -> Result<()> {
+        self.writer.delete()
+    }
+
     pub fn get_receiving_address(&self) -> String {
         self.sp_receiver.get_receiving_address()
     }

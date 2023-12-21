@@ -79,6 +79,15 @@ pub fn reset_wallet(path: String, label: String) -> Result<(), String> {
     }
 }
 
+pub fn remove_wallet(path: String, label: String) -> Result<(), String> {
+    match SpClient::try_init_from_disk(label, path) {
+        Ok(sp_client) => {
+            sp_client.delete_from_disk().map_err(|e| e.to_string())
+        },
+        Err(_) => return Err("Wallet doesn't exist".to_owned()),
+    }
+}
+
 pub fn start_nakamoto() -> Result<(), String> {
     nakamotoclient::start_nakamoto_client()
         .map_err(|e| e.to_string())
