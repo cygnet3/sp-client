@@ -6,7 +6,7 @@ use crate::{
     constants::{LogEntry, WalletType},
     electrumclient::create_electrum_client,
     nakamotoclient,
-    spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic},
+    spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic, SpendKey},
     stream::{self},
 };
 
@@ -29,6 +29,13 @@ pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
     stream::create_scan_progress_stream(s);
 }
 
+pub fn wallet_exists(label: String, files_dir: String) -> bool {
+    match SpClient::try_init_from_disk(label, files_dir) {
+        Ok(_) => true,
+        Err(_) => false
+    }
+}
+
 pub fn setup(
     label: String,
     files_dir: String,
@@ -36,30 +43,55 @@ pub fn setup(
     birthday: u32,
     is_testnet: bool,
 ) -> Result<String, String> {
+    if wallet_exists(label.clone(), files_dir.clone()) { return Err(label) }; // If the wallet already exists we just send the label as an error message
+
+    // TODO lot of repetition here
     match wallet_type {
-        WalletType::Mnemonic(mnemonic) => {
-            // We restore from seed
-            let (mnemonic, scan_sk, spend_sk) = derive_keys_from_mnemonic(&mnemonic, PASSPHRASE, is_testnet)
+        WalletType::New => {
+            // We create a new wallet and return the new mnemonic
+            let (mnemonic, scan_sk, spend_sk) = derive_keys_from_mnemonic("", PASSPHRASE, is_testnet)
                 .map_err(|e| e.to_string())?;
-            let sp_client = SpClient::new(label, scan_sk, spend_sk, birthday, is_testnet, files_dir)
+            let sp_client = SpClient::new(label, scan_sk, SpendKey::Secret(spend_sk), birthday, is_testnet, files_dir)
                 .map_err(|e| e.to_string())?;
             sp_client.save_to_disk()
                 .map_err(|e| e.to_string())?;
             return Ok(mnemonic.to_string());
         },
-        WalletType::PrivateKeys((scan_sk_hex, spend_sk_hex)) => {
-            // We directly restore with the keys
-            let scan_sk = bitcoin::secp256k1::SecretKey::from_str(&scan_sk_hex)
+        WalletType::Mnemonic(mnemonic) => {
+            // We restore from seed
+            let (_, scan_sk, spend_sk) = derive_keys_from_mnemonic(&mnemonic, PASSPHRASE, is_testnet)
                 .map_err(|e| e.to_string())?;
-            let spend_sk = bitcoin::secp256k1::SecretKey::from_str(&spend_sk_hex)
-                .map_err(|e| e.to_string())?;
-            let sp_client = SpClient::new(label, scan_sk, spend_sk, birthday, is_testnet, files_dir)
+            let sp_client = SpClient::new(label, scan_sk, SpendKey::Secret(spend_sk), birthday, is_testnet, files_dir)
                 .map_err(|e| e.to_string())?;
             sp_client.save_to_disk()
                 .map_err(|e| e.to_string())?;
             return Ok("".to_owned());
         },
-        WalletType::ReadOnly(_) => return Err("readonly not yet implemented".into()),
+        WalletType::PrivateKeys(scan_sk_hex, spend_sk_hex) => {
+            // We directly restore with the keys
+            let scan_sk = bitcoin::secp256k1::SecretKey::from_str(&scan_sk_hex)
+                .map_err(|e| e.to_string())?;
+            let spend_sk = bitcoin::secp256k1::SecretKey::from_str(&spend_sk_hex)
+                .map_err(|e| e.to_string())?;
+            let sp_client = SpClient::new(label, scan_sk, SpendKey::Secret(spend_sk), birthday, is_testnet, files_dir)
+                .map_err(|e| e.to_string())?;
+            sp_client.save_to_disk()
+                .map_err(|e| e.to_string())?;
+            return Ok("".to_owned());
+        },
+        WalletType::ReadOnly(scan_sk_hex, spend_pk_hex) => {
+            // We're only able to find payments but not to spend it
+            let scan_sk = bitcoin::secp256k1::SecretKey::from_str(&scan_sk_hex)
+                .map_err(|e| e.to_string())?;
+            let spend_pk = bitcoin::secp256k1::PublicKey::from_str(&spend_pk_hex)
+                .map_err(|e| e.to_string())?;
+            let sp_client = SpClient::new(label, scan_sk, SpendKey::Public(spend_pk), birthday, is_testnet, files_dir)
+                .map_err(|e| e.to_string())?;
+            sp_client.save_to_disk()
+                .map_err(|e| e.to_string())?;
+            return Ok("".to_owned());
+
+        }
     };
 }
 
