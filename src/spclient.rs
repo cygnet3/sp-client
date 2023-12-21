@@ -1,6 +1,6 @@
 use bip39::Mnemonic;
 use bitcoin::{
-    secp256k1::{Secp256k1, SecretKey, ONE_KEY},
+    secp256k1::{Secp256k1, SecretKey, ONE_KEY, PublicKey},
     util::bip32::{DerivationPath, ExtendedPrivKey},
     Network, OutPoint, Script, Txid,
 };
@@ -29,12 +29,17 @@ pub struct OwnedOutput {
     pub spent_by: Option<Txid>
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum SpendKey {
+    Secret(SecretKey),
+    Public(PublicKey)
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SpClient {
     pub label: String,
     scan_sk: SecretKey,
-    spend_sk: SecretKey,
+    spend_key: SpendKey,
     pub sp_receiver: Receiver,
     pub birthday: u32,
     pub last_scan: u32,
@@ -47,26 +52,34 @@ impl SpClient {
     pub fn new(
         label: String,
         scan_sk: SecretKey,
-        spend_sk: SecretKey,
+        spend_key: SpendKey,
         birthday: u32,
         is_testnet: bool,
         path: String,
     ) -> Result<Self> {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
-        let spend_pubkey = spend_sk.public_key(&secp);
-        let sp_receiver = Receiver::new(0, scan_pubkey, spend_pubkey, is_testnet)?;
+        let sp_receiver: Receiver;
+        match spend_key {
+            SpendKey::Public(key) => {
+                sp_receiver = Receiver::new(0, scan_pubkey, key, is_testnet)?;
+            },
+            SpendKey::Secret(key) => {
+                let spend_pubkey = key.public_key(&secp);
+                sp_receiver = Receiver::new(0, scan_pubkey, spend_pubkey, is_testnet)?;
+            }
+        }
         let writer = FileWriter::new(path, label.clone())?;
 
         Ok(Self {
             label,
             scan_sk,
+            spend_key,
             sp_receiver,
             birthday,
             last_scan: birthday,
             total_amt: 0,
             owned: vec![],
-            spend_sk,
             writer
         })
     }
@@ -75,7 +88,7 @@ impl SpClient {
         let empty = SpClient::new(
             label,
             ONE_KEY,
-            ONE_KEY,
+            SpendKey::Secret(ONE_KEY),
             0,
             false,
             path,
