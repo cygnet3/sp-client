@@ -5,6 +5,7 @@ type PublicKeyString = String;
 
 #[derive(Deserialize, Serialize)]
 pub enum WalletType {
+    New,
     Mnemonic(String),
     // scan_sk_hex, spend_sk_hex
     PrivateKeys(SecretKeyString, SecretKeyString),
