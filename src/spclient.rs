@@ -43,7 +43,6 @@ pub struct SpClient {
     pub sp_receiver: Receiver,
     pub birthday: u32,
     pub last_scan: u32,
-    pub total_amt: u64,
     owned: Vec<OwnedOutput>,
     writer: FileWriter,
 }
@@ -78,7 +77,6 @@ impl SpClient {
             sp_receiver,
             birthday,
             last_scan: birthday,
-            total_amt: 0,
             owned: vec![],
             writer
         })
@@ -101,11 +99,10 @@ impl SpClient {
         self.last_scan = scan_height;
     }
 
-    pub fn get_total_amt(&mut self) -> u64 {
-        self.total_amt = self.owned.iter()
+    pub fn get_total_amt(&self) -> u64 {
+        self.owned.iter()
             .filter(|x| !x.spent)
-            .fold(0, |acc, x| acc + x.amount);
-        self.total_amt
+            .fold(0, |acc, x| acc + x.amount)
     }
 
     pub fn extend_owned(&mut self, owned: Vec<OwnedOutput>) {
