@@ -94,6 +94,20 @@ pub fn setup(
     };
 }
 
+/// Change wallet birthday
+/// Since this method doesn't touch the known outputs
+/// the caller is responsible for resetting the wallet to its new birthday  
+pub fn change_birthday(path: String, label: String, birthday: u32) -> Result<(), String> {
+    match SpClient::try_init_from_disk(label, path) {
+        Ok(mut sp_client) => {
+            sp_client.birthday = birthday;
+            sp_client.save_to_disk()
+                .map_err(|e| e.to_string())
+        },
+        Err(_) => return Err("Wallet doesn't exist".to_owned()),
+    } 
+}
+
 /// Reset the last_scan of the wallet to its birthday, removing all outpoints
 pub fn reset_wallet(path: String, label: String) -> Result<(), String> {
     match SpClient::try_init_from_disk(label, path) {
