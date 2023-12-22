@@ -16,7 +16,6 @@ pub struct WalletStatus {
     pub amount: u64,
     pub birthday: u32,
     pub scan_height: u32,
-    pub tip_height: u32,
 }
 
 pub fn create_log_stream(s: StreamSink<LogEntry>) {
@@ -156,15 +155,12 @@ pub fn get_wallet_info(path: String, label: String) -> Result<WalletStatus, Stri
 
     let scan_height = sp_client.last_scan;
     let birthday = sp_client.birthday;
-    let tip_height = nakamotoclient::get_tip()
-        .map_err(|e| e.to_string())?;
     let amount = sp_client.get_total_amt();
 
     Ok(WalletStatus {
         amount,
         birthday,
         scan_height,
-        tip_height,
     })
 }
 
