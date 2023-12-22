@@ -149,11 +149,10 @@ pub fn scan_to_tip(path: String, label: String) -> Result<(), String> {
 }
 
 pub fn get_wallet_info(path: String, label: String) -> Result<WalletStatus, String> {
-    let mut sp_client: SpClient;
-    match SpClient::try_init_from_disk(label, path) {
-        Ok(s) => sp_client = s,
+    let sp_client = match SpClient::try_init_from_disk(label, path) {
+        Ok(s) => s,
         Err(_) => return Err("Wallet not found".to_owned())
-    }
+    };
 
     let scan_height = sp_client.last_scan;
     let birthday = sp_client.birthday;
