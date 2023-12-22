@@ -20,13 +20,13 @@ pub struct ScanProgress {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct OwnedOutput {
-    pub txoutpoint: OutPoint, 
+    pub txoutpoint: String, 
     pub blockheight: u32,
     pub tweak: String,
     pub amount: u64,
-    pub script: Script,
+    pub script: String,
     pub spent: bool,
-    pub spent_by: Option<Txid>
+    pub spent_by: Option<String>
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

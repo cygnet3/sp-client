@@ -244,11 +244,11 @@ fn scan_block(
                     if let Some(scalar) = ours.get(&key) {
                         match SecretKey::from_slice(&scalar.to_be_bytes()) {
                             Ok(tweak) => Some(OwnedOutput {
-                                txoutpoint: OutPoint { txid, vout: *i as u32 },
+                                txoutpoint: OutPoint { txid, vout: *i as u32 }.to_string(),
                                 blockheight: blkheight as u32,
                                 tweak: hex::encode(tweak.secret_bytes()),
                                 amount: o.value,
-                                script: o.script_pubkey.clone(),
+                                script: hex::encode(o.script_pubkey.as_bytes()),
                                 spent: false,
                                 spent_by: None,
                             }),
