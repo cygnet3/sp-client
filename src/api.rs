@@ -6,7 +6,7 @@ use crate::{
     constants::{LogEntry, WalletType},
     electrumclient::create_electrum_client,
     nakamotoclient,
-    spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic, SpendKey},
+    spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic, SpendKey, OwnedOutput},
     stream::{self},
 };
 
@@ -186,4 +186,19 @@ pub fn get_receiving_address(path: String, label: String) -> Result<String, Stri
     }
 
     Ok(sp_client.get_receiving_address())
+}
+
+pub fn get_spendable_outputs(path: String, label: String) -> Result<Vec<OwnedOutput>, String> {
+    let outputs = get_outputs(path, label)?;
+
+    Ok(outputs.into_iter().filter(|o| !o.spent).collect())
+}
+
+pub fn get_outputs(path: String, label: String) -> Result<Vec<OwnedOutput>, String> {
+    let sp_client: SpClient = match SpClient::try_init_from_disk(label, path) {
+        Ok(s) => s,
+        Err(_) => return Err("Wallet not found".to_owned())
+    };
+
+    Ok(sp_client.list_outpoints())
 }
