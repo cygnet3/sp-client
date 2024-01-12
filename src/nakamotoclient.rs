@@ -26,22 +26,17 @@ lazy_static! {
     static ref NAKAMOTO_CONFIG: OnceCell<Config> = OnceCell::new();
 }
 
-pub fn setup(path: String) {
-    let mut cfg = Config::new(client::Network::Signet);
+pub fn setup(network: String, path: String) -> Result<()> {
+    let mut cfg = Config::new(client::Network::from_str(&network)
+        .map_err(|_| Error::msg("Invalid network"))?);
 
     cfg.root = PathBuf::from(format!("{}/db", path));
     loginfo(format!("cfg.root = {:?}", cfg.root).as_str());
 
     match NAKAMOTO_CONFIG.set(cfg) {
         Ok(_) => (),
-        Err(_) => { loginfo("NAKAMOTO_CONFIG already set") }
+        Err(_) => { loginfo("NAKAMOTO_CONFIG already set"); }
     }
-}
-
-fn set_global_handle(handle: nakamoto::client::Handle<Waker>) -> Result<()> {
-    let mut global_handle = HANDLE.lock()
-        .map_err(|e| anyhow::Error::msg(format!("Lock poisoned: {:?}", e)))?;
-    *global_handle = Some(handle);
     Ok(())
 }
 

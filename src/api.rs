@@ -38,6 +38,11 @@ pub fn wallet_exists(label: String, files_dir: String) -> bool {
     }
 }
 
+pub fn setup_nakamoto(network: String, path: String) -> Result<(), String> {
+    nakamotoclient::setup(network, path)
+        .map_err(|e| e.to_string())
+}
+
 pub fn setup(
     label: String,
     files_dir: String,
