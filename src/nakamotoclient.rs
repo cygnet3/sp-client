@@ -1,14 +1,14 @@
-use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::Mutex};
+use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::{atomic::{AtomicBool, Ordering}}, thread::{self, sleep, JoinHandle}, time::{Duration, Instant}};
 
 use anyhow::{Error, Result};
 use bitcoin::{
     secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
-    Block, Script, TxOut, XOnlyPublicKey, OutPoint,
+    Block, Script, TxOut, XOnlyPublicKey, OutPoint, network::constants::ServiceFlags,
 };
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
 use nakamoto::{
-    client::{self, traits::Handle, Client, Config},
+    client::{self, traits::Handle as _, Client, Config, Handle},
     common::network::Services,
     net::poll::Waker,
 };
@@ -17,66 +17,109 @@ use silentpayments::receiving::Receiver;
 
 use crate::{
     spclient::{OwnedOutput, ScanProgress, SpClient},
-    stream::{loginfo, send_scan_progress},
+    stream::{loginfo, send_amount_update, send_scan_progress, send_sync_progress, send_nakamoto_run}, constants::SyncStatus, electrumclient,
 };
 
+const ORDERING: Ordering = Ordering::SeqCst;
+
 lazy_static! {
-    static ref HANDLE: Mutex<Option<nakamoto::client::Handle<nakamoto::net::poll::Waker>>> =
-        Mutex::new(None);
+    static ref NAKAMOTO_RUN: AtomicBool = AtomicBool::new(false);
     static ref NAKAMOTO_CONFIG: OnceCell<Config> = OnceCell::new();
 }
 
-pub fn setup(path: String) {
-    let mut cfg = Config::new(client::Network::Signet);
+pub fn setup(network: String, path: String) -> Result<()> {
+    let mut cfg = Config::new(client::Network::from_str(&network)
+        .map_err(|_| Error::msg("Invalid network"))?);
 
     cfg.root = PathBuf::from(format!("{}/db", path));
     loginfo(format!("cfg.root = {:?}", cfg.root).as_str());
 
     match NAKAMOTO_CONFIG.set(cfg) {
         Ok(_) => (),
-        Err(_) => { loginfo("NAKAMOTO_CONFIG already set") }
+        Err(_) => { loginfo("NAKAMOTO_CONFIG already set"); }
     }
-}
-
-fn set_global_handle(handle: nakamoto::client::Handle<Waker>) -> Result<()> {
-    let mut global_handle = HANDLE.lock()
-        .map_err(|e| anyhow::Error::msg(format!("Lock poisoned: {:?}", e)))?;
-    *global_handle = Some(handle);
     Ok(())
 }
 
-fn get_global_handle() -> Result<nakamoto::client::Handle<Waker>> {
-    let global_handle = HANDLE.lock()
-        .map_err(|e| anyhow::Error::msg(format!("Lock poisoned: {:?}", e)))?;
+pub fn start_nakamoto_client() -> Result<(Handle<Waker>, JoinHandle<()>)> {
+    if let Err(_) = NAKAMOTO_RUN.compare_exchange(false, true, ORDERING, ORDERING) {
+        return Err(Error::msg("Nakamoto client is already running"));
+    }
 
-    global_handle.clone().ok_or_else(|| anyhow::Error::msg("Global handle is None"))
+    send_nakamoto_run(NAKAMOTO_RUN.load(ORDERING));
+
+    let cfg = NAKAMOTO_CONFIG.wait().clone();
+    // Create a client using the above network reactor.
+    type Reactor = nakamoto::net::poll::Reactor<net::TcpStream>;
+    let client = Client::<Reactor>::new()?;
+    let handle = client.handle();
+    
+    let join_handle = thread::spawn(|| {
+        client.run(cfg).unwrap();
+    });
+
+    Ok((handle, join_handle))
 }
 
-pub fn get_tip() -> Result<u32> {
-    let handle = get_global_handle()?;
+pub fn stop_nakamoto_client(handle: Handle<Waker>, join_handle: JoinHandle<()>) -> Result<()> {
+    NAKAMOTO_RUN.store(false, ORDERING);
+    send_nakamoto_run(NAKAMOTO_RUN.load(ORDERING));
+    handle.shutdown()?;
+    join_handle.join().map_err(|e| Error::msg("Failed to join thread"))?;
+    Ok(())
+}
+pub fn sync_blockchain(mut handle: Handle<Waker>) -> Result<()> {
+    handle.set_timeout(Duration::from_secs(10));
 
-    let res = handle.get_tip()?;
-    loginfo(format!("tip {}", res.0).as_str());
+    if let Err(_) = handle.wait_for_peers(1, ServiceFlags::NETWORK) {
+        return Err(Error::msg("Can't connect to peers"));
+    } 
 
-    Ok(res.0 as u32)
+    let mut last_height = 0;
+
+    loop {
+        let peer_count = handle.get_peers(ServiceFlags::NETWORK)?;
+        if peer_count.len() == 0 { continue };
+        let (height, header, _) = handle.get_tip()?;
+        send_sync_progress(SyncStatus {
+            peer_count: peer_count.len() as u32,
+            blockheight: height,
+            bestblockhash: header.block_hash().to_string()
+        });
+        if last_height == 0 || last_height < height {
+            last_height = height;
+            sleep(Duration::from_secs(2));
+            continue;
+        }
+        break;
+    }
+
+    Ok(())
 }
 
-pub fn get_peer_count() -> Result<u32> {
-    let handle = get_global_handle()?;
+pub fn clean_db() -> Result<()> {
+    // Check that nakamoto isn't running 
+    if NAKAMOTO_RUN.load(ORDERING) {
+        return Err(Error::msg("Nakamoto is still running, wait for it to complete first"));
+    }
 
-    let res = handle.get_peers(Services::default())?;
-
-    loginfo(format!("peers {}", res.len()).as_str());
-
-    Ok(res.len() as u32)
+    let cfg = NAKAMOTO_CONFIG.wait().clone();
+    std::fs::remove_dir_all(cfg.root)
+        .map_err(|e| Error::new(e))
 }
 
 pub fn scan_blocks(
+    mut handle: Handle<Waker>,
     mut n_blocks_to_scan: u32,
     mut sp_client: SpClient,
-    electrum_client: electrum_client::Client,
 ) -> anyhow::Result<()> {
-    let handle = get_global_handle()?;
+    let electrum_client = electrumclient::create_electrum_client()?;
+
+    handle.set_timeout(Duration::from_secs(10));
+
+    if let Err(_) = handle.wait_for_peers(1, ServiceFlags::COMPACT_FILTERS) {
+        return Err(Error::msg("Can't find peers with compact filters service"));
+    } 
 
     loginfo("scanning blocks");
 
@@ -112,6 +155,7 @@ pub fn scan_blocks(
 
     let scan_key_scalar = Scalar::from(sp_client.get_scan_key());
     let sp_receiver = sp_client.sp_receiver.clone();
+    let start_time = Instant::now();
 
     for n in start..=end {
         if n % 10 == 0 || n == end {
@@ -153,6 +197,8 @@ pub fn scan_blocks(
 
                 sp_client.extend_owned(owned);
 
+                send_amount_update(sp_client.get_total_amt());
+
                 send_scan_progress(ScanProgress {
                     start,
                     current: n,
@@ -165,34 +211,13 @@ pub fn scan_blocks(
             // println!("no tweak data for this block");
         }
     }
+
+    // time elapsed for the scan
+    loginfo(&format!("Scan complete in {} seconds", start_time.elapsed().as_secs()));
+
     // update last_scan height
     sp_client.update_last_scan(end);
     sp_client.save_to_disk()
-}
-
-pub fn start_nakamoto_client() -> anyhow::Result<()> {
-    let cfg = NAKAMOTO_CONFIG.wait().clone();
-
-    // Create a client using the above network reactor.
-    type Reactor = nakamoto::net::poll::Reactor<net::TcpStream>;
-    let client = Client::<Reactor>::new()?;
-    let handle = client.handle();
-
-    set_global_handle(handle)?;
-
-    loginfo("handle set");
-    client.run(cfg)?;
-    Ok(())
-}
-
-pub fn restart_nakamoto_client() -> Result<()> {
-    let handle = get_global_handle()?;
-
-    handle.shutdown()?;
-
-    loginfo("shutdown completed, restarting");
-
-    start_nakamoto_client()
 }
 
 // possible block has been found, scan the block

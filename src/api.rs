@@ -3,11 +3,11 @@ use std::str::FromStr;
 use flutter_rust_bridge::StreamSink;
 
 use crate::{
-    constants::{LogEntry, WalletType},
+    constants::{LogEntry, WalletType, SyncStatus},
     electrumclient::create_electrum_client,
     nakamotoclient,
     spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic, SpendKey, OwnedOutput},
-    stream::{self},
+    stream::{self, loginfo},
 };
 
 const PASSPHRASE: &str = ""; // no passphrase for now
@@ -21,11 +21,17 @@ pub struct WalletStatus {
 pub fn create_log_stream(s: StreamSink<LogEntry>) {
     stream::create_log_stream(s);
 }
-pub fn create_amount_stream(s: StreamSink<u64>) {
-    stream::create_amount_stream(s);
+pub fn create_sync_stream(s: StreamSink<SyncStatus>) {
+    stream::create_sync_stream(s);
 }
 pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
     stream::create_scan_progress_stream(s);
+}
+pub fn create_amount_stream(s: StreamSink<u64>) {
+    stream::create_amount_stream(s);
+}
+pub fn create_nakamoto_run_stream(s: StreamSink<bool>) {
+    stream::create_nakamoto_run_stream(s);
 }
 
 pub fn wallet_exists(label: String, files_dir: String) -> bool {
@@ -33,6 +39,16 @@ pub fn wallet_exists(label: String, files_dir: String) -> bool {
         Ok(_) => true,
         Err(_) => false
     }
+}
+
+pub fn setup_nakamoto(network: String, path: String) -> Result<(), String> {
+    nakamotoclient::setup(network, path)
+        .map_err(|e| e.to_string())
+}
+
+pub fn clean_nakamoto() -> Result<(), String> {
+    nakamotoclient::clean_db()
+        .map_err(|e| e.to_string())
 }
 
 pub fn setup(
@@ -130,35 +146,35 @@ pub fn remove_wallet(path: String, label: String) -> Result<(), String> {
     }
 }
 
-pub fn start_nakamoto() -> Result<(), String> {
-    nakamotoclient::start_nakamoto_client()
-        .map_err(|e| e.to_string())
-}
-
-pub fn restart_nakamoto() -> Result<(), String> {
-    nakamotoclient::restart_nakamoto_client()
-        .map_err(|e| e.to_string())
-}
-
-pub fn get_peer_count() -> Result<u32, String> {
-    nakamotoclient::get_peer_count()
-        .map_err(|e| e.to_string())
-}
-
-pub fn scan_next_n_blocks(path: String, label: String, n: u32) -> Result<(), String> {
-    let electrum_client = create_electrum_client()
+pub fn sync_blockchain() -> Result<(), String> {
+    let (handle, join_handle) = nakamotoclient::start_nakamoto_client()
         .map_err(|e| e.to_string())?;
 
-    match SpClient::try_init_from_disk(label, path) {
-        Ok(sp_client) => nakamotoclient::scan_blocks(n, sp_client, electrum_client).map_err(|e| e.to_string())?,
-        Err(_) => return Err("Wallet not found".to_owned())
-    }
-    Ok(())
+    loginfo("Nakamoto started");
+    let res = nakamotoclient::sync_blockchain(handle.clone())
+        .map_err(|e| e.to_string());
+
+    nakamotoclient::stop_nakamoto_client(handle, join_handle)
+        .map_err(|e| e.to_string())?;
+
+    res
 }
 
 pub fn scan_to_tip(path: String, label: String) -> Result<(), String> {
-    // 0 means scan to tip
-    scan_next_n_blocks(path, label, 0)
+    let (handle, join_handle) = nakamotoclient::start_nakamoto_client()
+        .map_err(|e| e.to_string())?;
+    loginfo("Nakamoto started");
+
+    let res = match SpClient::try_init_from_disk(label, path) {
+        Err(_) => Err("Wallet not found".to_owned()),
+        Ok(sp_client) => {
+            nakamotoclient::scan_blocks(handle.clone(), 0, sp_client).map_err(|e| e.to_string())
+        }
+    };
+    nakamotoclient::stop_nakamoto_client(handle, join_handle)
+        .map_err(|e| e.to_string())?;
+
+    res
 }
 
 pub fn get_wallet_info(path: String, label: String) -> Result<WalletStatus, String> {

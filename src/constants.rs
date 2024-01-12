@@ -19,3 +19,9 @@ pub struct LogEntry {
     // pub tag: String,
     pub msg: String,
 }
+
+pub struct SyncStatus {
+    pub peer_count: u32,
+    pub blockheight: u64,
+    pub bestblockhash: String,
+}
