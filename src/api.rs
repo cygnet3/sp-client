@@ -3,7 +3,7 @@ use std::str::FromStr;
 use flutter_rust_bridge::StreamSink;
 
 use crate::{
-    constants::{LogEntry, WalletType},
+    constants::{LogEntry, WalletType, SyncStatus},
     electrumclient::create_electrum_client,
     nakamotoclient,
     spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic, SpendKey, OwnedOutput},
@@ -21,11 +21,14 @@ pub struct WalletStatus {
 pub fn create_log_stream(s: StreamSink<LogEntry>) {
     stream::create_log_stream(s);
 }
-pub fn create_amount_stream(s: StreamSink<u64>) {
-    stream::create_amount_stream(s);
+pub fn create_sync_stream(s: StreamSink<SyncStatus>) {
+    stream::create_sync_stream(s);
 }
 pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
     stream::create_scan_progress_stream(s);
+}
+pub fn create_amount_stream(s: StreamSink<u64>) {
+    stream::create_amount_stream(s);
 }
 
 pub fn wallet_exists(label: String, files_dir: String) -> bool {
