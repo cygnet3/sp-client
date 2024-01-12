@@ -11,6 +11,7 @@ lazy_static! {
     static ref AMOUNT_STREAM_SINK: Mutex<Option<StreamSink<u64>>> = Mutex::new(None);
     static ref SCAN_STREAM_SINK: Mutex<Option<StreamSink<ScanProgress>>> = Mutex::new(None);
     static ref SYNC_STREAM_SINK: Mutex<Option<StreamSink<SyncStatus>>> = Mutex::new(None);
+    static ref NAKAMOTO_RUN_STREAM_SINK: Mutex<Option<StreamSink<bool>>> = Mutex::new(None);
 }
 
 pub fn create_log_stream(s: StreamSink<LogEntry>) {
@@ -30,6 +31,11 @@ pub fn create_sync_stream(s: StreamSink<SyncStatus>) {
 
 pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
     let mut stream_sink = SCAN_STREAM_SINK.lock().unwrap();
+    *stream_sink = Some(s);
+}
+
+pub fn create_nakamoto_run_stream(s: StreamSink<bool>) {
+    let mut stream_sink = NAKAMOTO_RUN_STREAM_SINK.lock().unwrap();
     *stream_sink = Some(s);
 }
 
@@ -63,3 +69,9 @@ pub(crate) fn send_scan_progress(scan_progress: ScanProgress) {
     }
 }
 
+pub(crate) fn send_nakamoto_run(nakamoto_run: bool) {
+    let stream_sink = NAKAMOTO_RUN_STREAM_SINK.lock().unwrap();
+    if let Some(stream_sink) = stream_sink.as_ref().clone() {
+        stream_sink.add(nakamoto_run);
+    }
+}

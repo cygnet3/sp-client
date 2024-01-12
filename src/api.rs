@@ -7,7 +7,7 @@ use crate::{
     electrumclient::create_electrum_client,
     nakamotoclient,
     spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic, SpendKey, OwnedOutput},
-    stream::{self},
+    stream::{self, loginfo},
 };
 
 const PASSPHRASE: &str = ""; // no passphrase for now
@@ -29,6 +29,9 @@ pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
 }
 pub fn create_amount_stream(s: StreamSink<u64>) {
     stream::create_amount_stream(s);
+}
+pub fn create_nakamoto_run_stream(s: StreamSink<bool>) {
+    stream::create_nakamoto_run_stream(s);
 }
 
 pub fn wallet_exists(label: String, files_dir: String) -> bool {
