@@ -76,7 +76,7 @@ impl SpClient {
             spend_key,
             sp_receiver,
             birthday,
-            last_scan: birthday,
+            last_scan: if birthday == 0 {0} else {birthday - 1},
             owned: vec![],
             writer
         })
