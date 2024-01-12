@@ -3,7 +3,7 @@ use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::{atomic:
 use anyhow::{Error, Result};
 use bitcoin::{
     secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
-    Block, Script, TxOut, XOnlyPublicKey, OutPoint,
+    Block, Script, TxOut, XOnlyPublicKey, OutPoint, network::constants::ServiceFlags,
 };
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
@@ -115,11 +115,17 @@ pub fn get_peer_count() -> Result<u32> {
 }
 
 pub fn scan_blocks(
+    mut handle: Handle<Waker>,
     mut n_blocks_to_scan: u32,
     mut sp_client: SpClient,
-    electrum_client: electrum_client::Client,
 ) -> anyhow::Result<()> {
-    let handle = get_global_handle()?;
+    let electrum_client = electrumclient::create_electrum_client()?;
+
+    handle.set_timeout(Duration::from_secs(10));
+
+    if let Err(_) = handle.wait_for_peers(1, ServiceFlags::COMPACT_FILTERS) {
+        return Err(Error::msg("Can't find peers with compact filters service"));
+    } 
 
     loginfo("scanning blocks");
 
