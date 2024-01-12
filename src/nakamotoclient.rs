@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::Mutex};
+use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::{atomic::{AtomicBool, Ordering}}, thread::{self, sleep, JoinHandle}, time::{Duration, Instant}};
 
 use anyhow::{Error, Result};
 use bitcoin::{
@@ -8,7 +8,7 @@ use bitcoin::{
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
 use nakamoto::{
-    client::{self, traits::Handle, Client, Config},
+    client::{self, traits::Handle as _, Client, Config, Handle},
     common::network::Services,
     net::poll::Waker,
 };
@@ -17,12 +17,13 @@ use silentpayments::receiving::Receiver;
 
 use crate::{
     spclient::{OwnedOutput, ScanProgress, SpClient},
-    stream::{loginfo, send_scan_progress},
+    stream::{loginfo, send_amount_update, send_scan_progress, send_sync_progress, send_nakamoto_run}, constants::SyncStatus, electrumclient,
 };
 
+const ORDERING: Ordering = Ordering::SeqCst;
+
 lazy_static! {
-    static ref HANDLE: Mutex<Option<nakamoto::client::Handle<nakamoto::net::poll::Waker>>> =
-        Mutex::new(None);
+    static ref NAKAMOTO_RUN: AtomicBool = AtomicBool::new(false);
     static ref NAKAMOTO_CONFIG: OnceCell<Config> = OnceCell::new();
 }
 
@@ -40,13 +41,60 @@ pub fn setup(network: String, path: String) -> Result<()> {
     Ok(())
 }
 
-fn get_global_handle() -> Result<nakamoto::client::Handle<Waker>> {
-    let global_handle = HANDLE.lock()
-        .map_err(|e| anyhow::Error::msg(format!("Lock poisoned: {:?}", e)))?;
+pub fn start_nakamoto_client() -> Result<(Handle<Waker>, JoinHandle<()>)> {
+    if let Err(_) = NAKAMOTO_RUN.compare_exchange(false, true, ORDERING, ORDERING) {
+        return Err(Error::msg("Nakamoto client is already running"));
+    }
 
-    global_handle.clone().ok_or_else(|| anyhow::Error::msg("Global handle is None"))
+    send_nakamoto_run(NAKAMOTO_RUN.load(ORDERING));
+
+    let cfg = NAKAMOTO_CONFIG.wait().clone();
+    // Create a client using the above network reactor.
+    type Reactor = nakamoto::net::poll::Reactor<net::TcpStream>;
+    let client = Client::<Reactor>::new()?;
+    let handle = client.handle();
+    
+    let join_handle = thread::spawn(|| {
+        client.run(cfg).unwrap();
+    });
+
+    Ok((handle, join_handle))
 }
 
+pub fn stop_nakamoto_client(handle: Handle<Waker>, join_handle: JoinHandle<()>) -> Result<()> {
+    NAKAMOTO_RUN.store(false, ORDERING);
+    send_nakamoto_run(NAKAMOTO_RUN.load(ORDERING));
+    handle.shutdown()?;
+    join_handle.join().map_err(|e| Error::msg("Failed to join thread"))?;
+    Ok(())
+}
+pub fn sync_blockchain(mut handle: Handle<Waker>) -> Result<()> {
+    handle.set_timeout(Duration::from_secs(10));
+
+    if let Err(_) = handle.wait_for_peers(1, ServiceFlags::NETWORK) {
+        return Err(Error::msg("Can't connect to peers"));
+    } 
+
+    let mut last_height = 0;
+
+    loop {
+        let peer_count = handle.get_peers(ServiceFlags::NETWORK)?;
+        if peer_count.len() == 0 { continue };
+        let (height, header, _) = handle.get_tip()?;
+        send_sync_progress(SyncStatus {
+            peer_count: peer_count.len() as u32,
+            blockheight: height,
+            bestblockhash: header.block_hash().to_string()
+        });
+        if last_height == 0 || last_height < height {
+            last_height = height;
+            sleep(Duration::from_secs(2));
+            continue;
+        }
+        break;
+    }
+
+    Ok(())
 pub fn get_tip() -> Result<u32> {
     let handle = get_global_handle()?;
 
@@ -163,31 +211,6 @@ pub fn scan_blocks(
     // update last_scan height
     sp_client.update_last_scan(end);
     sp_client.save_to_disk()
-}
-
-pub fn start_nakamoto_client() -> anyhow::Result<()> {
-    let cfg = NAKAMOTO_CONFIG.wait().clone();
-
-    // Create a client using the above network reactor.
-    type Reactor = nakamoto::net::poll::Reactor<net::TcpStream>;
-    let client = Client::<Reactor>::new()?;
-    let handle = client.handle();
-
-    set_global_handle(handle)?;
-
-    loginfo("handle set");
-    client.run(cfg)?;
-    Ok(())
-}
-
-pub fn restart_nakamoto_client() -> Result<()> {
-    let handle = get_global_handle()?;
-
-    handle.shutdown()?;
-
-    loginfo("shutdown completed, restarting");
-
-    start_nakamoto_client()
 }
 
 // possible block has been found, scan the block
