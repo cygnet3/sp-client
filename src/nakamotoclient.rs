@@ -95,23 +95,17 @@ pub fn sync_blockchain(mut handle: Handle<Waker>) -> Result<()> {
     }
 
     Ok(())
-pub fn get_tip() -> Result<u32> {
-    let handle = get_global_handle()?;
-
-    let res = handle.get_tip()?;
-    loginfo(format!("tip {}", res.0).as_str());
-
-    Ok(res.0 as u32)
 }
 
-pub fn get_peer_count() -> Result<u32> {
-    let handle = get_global_handle()?;
+pub fn clean_db() -> Result<()> {
+    // Check that nakamoto isn't running 
+    if NAKAMOTO_RUN.load(ORDERING) {
+        return Err(Error::msg("Nakamoto is still running, wait for it to complete first"));
+    }
 
-    let res = handle.get_peers(Services::default())?;
-
-    loginfo(format!("peers {}", res.len()).as_str());
-
-    Ok(res.len() as u32)
+    let cfg = NAKAMOTO_CONFIG.wait().clone();
+    std::fs::remove_dir_all(cfg.root)
+        .map_err(|e| Error::new(e))
 }
 
 pub fn scan_blocks(

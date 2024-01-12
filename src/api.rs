@@ -43,6 +43,11 @@ pub fn setup_nakamoto(network: String, path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+pub fn clean_nakamoto() -> Result<(), String> {
+    nakamotoclient::clean_db()
+        .map_err(|e| e.to_string())
+}
+
 pub fn setup(
     label: String,
     files_dir: String,
