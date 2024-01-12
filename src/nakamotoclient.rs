@@ -161,6 +161,7 @@ pub fn scan_blocks(
 
     let scan_key_scalar = Scalar::from(sp_client.get_scan_key());
     let sp_receiver = sp_client.sp_receiver.clone();
+    let start_time = Instant::now();
 
     for n in start..=end {
         if n % 10 == 0 || n == end {
@@ -202,6 +203,8 @@ pub fn scan_blocks(
 
                 sp_client.extend_owned(owned);
 
+                send_amount_update(sp_client.get_total_amt());
+
                 send_scan_progress(ScanProgress {
                     start,
                     current: n,
@@ -214,6 +217,10 @@ pub fn scan_blocks(
             // println!("no tweak data for this block");
         }
     }
+
+    // time elapsed for the scan
+    loginfo(&format!("Scan complete in {} seconds", start_time.elapsed().as_secs()));
+
     // update last_scan height
     sp_client.update_last_scan(end);
     sp_client.save_to_disk()
