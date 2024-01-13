@@ -3,10 +3,9 @@ use std::str::FromStr;
 use flutter_rust_bridge::StreamSink;
 
 use crate::{
-    constants::{LogEntry, WalletType, SyncStatus},
-    electrumclient::create_electrum_client,
+    constants::{LogEntry, SyncStatus, WalletType},
     nakamotoclient,
-    spclient::{ScanProgress, SpClient, derive_keys_from_mnemonic, SpendKey, OwnedOutput},
+    spclient::{derive_keys_from_mnemonic, OwnedOutput, ScanProgress, SpClient, SpendKey},
     stream::{self, loginfo},
 };
 
