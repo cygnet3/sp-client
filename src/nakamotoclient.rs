@@ -2,12 +2,12 @@ use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::{atomic:
 
 use anyhow::{Error, Result};
 use bitcoin::{
-    secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey}, XOnlyPublicKey
+    secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey}, XOnlyPublicKey
 };
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
 use nakamoto::{
-    chain::Block, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut}, net::poll::Waker
+    chain::{filter::BlockFilter, Block, BlockHash}, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut}, net::poll::Waker
 };
 use once_cell::sync::OnceCell;
 use silentpayments::receiving::Receiver;
@@ -165,46 +165,31 @@ pub fn scan_blocks(
 
         let (blkfilter, blkhash, blkheight) = filterchannel.recv()?;
 
-        if let Some(tweak_data_vec) = tweak_data_map.remove(&(blkheight as u32)) {
-            let shared_secrets: Result<Vec<PublicKey>> = tweak_data_vec
-                .into_iter()
-                .map(|s| {
-                    let x = PublicKey::from_str(&s).map_err(|e| Error::new(e))?;
-                    x.mul_tweak(&secp, &scan_key_scalar)
-                        .map_err(|e| Error::new(e))
-                })
-                .collect();
-            let shared_secrets = shared_secrets?;
-
-            let candidate_spks: Result<Vec<[u8; 34]>, _> = shared_secrets
-                .iter()
-                .map(|s| {
-                    sp_receiver
-                        .get_script_bytes_from_shared_secret(s)
-                })
-                .collect();
-            let candidate_spks = candidate_spks?;
-
-            let found = blkfilter.match_any(&blkhash, &mut candidate_spks.iter().map(|spk| spk.as_ref()))?;
-            if found {
-                handle.request_block(&blkhash)?;
-                let (blk, _) = blkchannel.recv()?;
-                let owned = scan_block(&sp_receiver, blk, candidate_spks.into_iter().zip(shared_secrets).collect())?;
-
-                sp_client.extend_owned(owned);
-
-                send_amount_update(sp_client.get_total_amt());
-
-                send_scan_progress(ScanProgress {
-                    start,
-                    current: n,
-                    end,
-                });
-            } else {
-                // println!("no payments found");
+        let spk2secret = match tweak_data_map.remove(&(blkheight as u32)) {
+            Some(tweak_data_vec) => {
+                get_script_to_secret_map(&sp_receiver, tweak_data_vec, &scan_key_scalar, &secp)?
             }
-        } else {
-            // println!("no tweak data for this block");
+            None => HashMap::new(),
+        };
+
+        let candidate_spks: Vec<&[u8; 34]> = spk2secret.keys().collect();
+
+        let matched = check_block(blkfilter, blkhash, candidate_spks)?;
+
+        if matched {
+            handle.request_block(&blkhash)?;
+            let (blk, _) = blkchannel.recv()?;
+            let owned = scan_block(&sp_receiver, blk, spk2secret)?;
+
+            sp_client.extend_owned(owned);
+
+            send_amount_update(sp_client.get_total_amt());
+
+            send_scan_progress(ScanProgress {
+                start,
+                current: n,
+                end,
+            });
         }
     }
 
@@ -214,6 +199,41 @@ pub fn scan_blocks(
     // update last_scan height
     sp_client.update_last_scan(end);
     sp_client.save_to_disk()
+}
+
+// Check if this block contains relevant transactions
+fn check_block(blkfilter: BlockFilter, blkhash: BlockHash, candidate_spks: Vec<&[u8; 34]> ) -> Result<bool> {
+    let scripts_to_match: Vec<_> = candidate_spks.into_iter().map(|spk| spk.as_ref()).collect();
+
+    // todo check inputs aswell
+
+    // note: match will always return true for an empty query!
+    if scripts_to_match.len() > 0 {
+        Ok(blkfilter.match_any(&blkhash, &mut scripts_to_match.into_iter())?)
+    } else {
+        Ok(false)
+    }
+}
+
+fn get_script_to_secret_map(sp_receiver: &Receiver, tweak_data_vec: Vec<String>, scan_key_scalar: &Scalar, secp: &Secp256k1<All>) -> Result<HashMap<[u8; 34],PublicKey>> {
+
+    let mut res = HashMap::new();
+    let shared_secrets: Result<Vec<PublicKey>> = tweak_data_vec
+        .into_iter()
+        .map(|s| {
+            let x = PublicKey::from_str(&s).map_err(|e| Error::new(e))?;
+            x.mul_tweak(secp, scan_key_scalar)
+                .map_err(|e| Error::new(e))
+        })
+    .collect();
+    let shared_secrets = shared_secrets?;
+
+    for shared_secret in shared_secrets {
+        let script_bytes = sp_receiver.get_script_bytes_from_shared_secret(&shared_secret)?;
+
+        res.insert(script_bytes, shared_secret);
+    }
+    Ok(res)
 }
 
 // possible block has been found, scan the block
