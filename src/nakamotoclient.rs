@@ -142,7 +142,7 @@ pub fn scan_blocks(
     };
 
     if start > end {
-        return Err(Error::msg("Start height can't be higher than end"));
+        return Ok(())
     }
 
     loginfo(format!("start: {} end: {}", start, end).as_str());
