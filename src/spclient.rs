@@ -1,12 +1,12 @@
 use bip39::Mnemonic;
-use bitcoin::{bip32::{DerivationPath, Xpriv}, secp256k1::{constants::SECRET_KEY_SIZE, PublicKey, Secp256k1, SecretKey}, Network};
+use bitcoin::{bip32::{DerivationPath, Xpriv}, secp256k1::{constants::SECRET_KEY_SIZE, PublicKey, Secp256k1, SecretKey}, Network, OutPoint};
 use serde::{Serialize, Deserialize};
 use silentpayments::receiving::Receiver;
-use std::str::FromStr;
+use std::{str::FromStr, collections::HashMap};
 
 use anyhow::Result;
 
-use crate::db::FileWriter;
+use crate::{db::FileWriter, stream::loginfo};
 
 pub struct ScanProgress {
     pub start: u32,
@@ -39,7 +39,7 @@ pub struct SpClient {
     pub sp_receiver: Receiver,
     pub birthday: u32,
     pub last_scan: u32,
-    owned: Vec<OwnedOutput>,
+    owned: HashMap<OutPoint, OwnedOutput>,
     writer: FileWriter,
 }
 
@@ -73,7 +73,7 @@ impl SpClient {
             sp_receiver,
             birthday,
             last_scan: if birthday == 0 {0} else {birthday - 1},
-            owned: vec![],
+            owned: HashMap::new(),
             writer
         })
     }
@@ -96,24 +96,42 @@ impl SpClient {
     }
 
     pub fn get_total_amt(&self) -> u64 {
-        self.owned.iter()
+        self.owned.values()
             .filter(|x| !x.spent)
             .fold(0, |acc, x| acc + x.amount)
     }
 
-    pub fn extend_owned(&mut self, owned: Vec<OwnedOutput>) {
+    pub fn extend_owned(&mut self, owned: Vec<(OutPoint, OwnedOutput)>) {
         self.owned.extend(owned.into_iter());
     }
 
+    pub fn check_outpoint_owned(&self, outpoint: OutPoint) -> bool {
+        self.owned.contains_key(&outpoint)
+    }
+
+    pub fn mark_outpoint_spent(&mut self, outpoint: OutPoint) -> Result<()> {
+        let owned = self.owned.get_mut(&outpoint);
+        match owned {
+            Some(owned) => {
+                loginfo(format!("marked {} as spent", owned.txoutpoint).as_str());
+                owned.spent = true;
+                Ok(())
+            }
+            None => Err(anyhow::anyhow!("owned outpoint not found")),
+        }
+    }
+
     pub fn list_outpoints(&self) -> Vec<OwnedOutput> {
-        self.owned.clone()
+        self.owned.values().cloned().collect()
     }
 
     pub fn reset_from_blockheight(self, blockheight: u32) -> Self {
         let mut new = self.clone();
-        new.owned = vec![];
-        new.owned = self.owned.into_iter()
-            .filter(|o| o.blockheight <= blockheight)
+        new.owned = HashMap::new();
+        new.owned = self
+            .owned
+            .into_iter()
+            .filter(|o| o.1.blockheight <= blockheight)
             .collect();
         new.last_scan = blockheight;
         new.get_total_amt();

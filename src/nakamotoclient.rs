@@ -1,13 +1,11 @@
-use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::{atomic::{AtomicBool, Ordering}}, thread::{self, sleep, JoinHandle}, time::{Duration, Instant}};
+use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::atomic::{AtomicBool, Ordering}, thread::{self, sleep, JoinHandle}, time::{Duration, Instant}};
 
 use anyhow::{Error, Result};
-use bitcoin::{
-    secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey}, XOnlyPublicKey
-};
+use bitcoin::{secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey}, OutPoint, XOnlyPublicKey };
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
 use nakamoto::{
-    chain::{filter::BlockFilter, Block, BlockHash}, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut}, net::poll::Waker
+    chain::{filter::BlockFilter, BlockHash, Transaction}, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, TxOut}, net::poll::Waker
 };
 use once_cell::sync::OnceCell;
 use silentpayments::receiving::Receiver;
@@ -62,7 +60,7 @@ pub fn stop_nakamoto_client(handle: Handle<Waker>, join_handle: JoinHandle<()>) 
     NAKAMOTO_RUN.store(false, ORDERING);
     send_nakamoto_run(NAKAMOTO_RUN.load(ORDERING));
     handle.shutdown()?;
-    join_handle.join().map_err(|e| Error::msg("Failed to join thread"))?;
+    join_handle.join().map_err(|_e| Error::msg("Failed to join thread"))?;
     Ok(())
 }
 pub fn sync_blockchain(mut handle: Handle<Waker>) -> Result<()> {
@@ -172,24 +170,57 @@ pub fn scan_blocks(
             None => HashMap::new(),
         };
 
+        // check if new possible outputs are payments to us
         let candidate_spks: Vec<&[u8; 34]> = spk2secret.keys().collect();
 
-        let matched = check_block(blkfilter, blkhash, candidate_spks)?;
+        // check if owned inputs are spent
+        let owned_spks: Vec<Vec<u8>> = sp_client
+            .list_outpoints()
+            .iter()
+            .filter_map(|x| {
+                if !x.spent {
+                    let script = hex::decode(&x.script).unwrap();
+                    Some(script)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let matched = check_block(blkfilter, blkhash, candidate_spks, owned_spks)?;
 
         if matched {
             handle.request_block(&blkhash)?;
-            let (blk, _) = blkchannel.recv()?;
-            let owned = scan_block(&sp_receiver, blk, spk2secret)?;
+            let blk = blkchannel.recv()?.0;
 
-            sp_client.extend_owned(owned);
+            // scan block for new outputs, and add them to our list
+            let owned = scan_block_outputs(&sp_receiver, &blk.txdata, blkheight, spk2secret)?;
+            if owned.len() > 0 {
+                sp_client.extend_owned(owned);
+                send_amount_update(sp_client.get_total_amt());
 
-            send_amount_update(sp_client.get_total_amt());
+                send_scan_progress(ScanProgress {
+                    start,
+                    current: n,
+                    end,
+                });
 
-            send_scan_progress(ScanProgress {
-                start,
-                current: n,
-                end,
-            });
+            }
+
+            // search inputs and mark as spent
+            let inputs_found = scan_block_inputs(&sp_client, blk.txdata)?;
+            if inputs_found.len() > 0 {
+                for outpoint in inputs_found {
+                    sp_client.mark_outpoint_spent(outpoint)?;
+                }
+                send_amount_update(sp_client.get_total_amt());
+
+                send_scan_progress(ScanProgress {
+                    start,
+                    current: n,
+                    end,
+                });
+            }
         }
     }
 
@@ -202,10 +233,13 @@ pub fn scan_blocks(
 }
 
 // Check if this block contains relevant transactions
-fn check_block(blkfilter: BlockFilter, blkhash: BlockHash, candidate_spks: Vec<&[u8; 34]> ) -> Result<bool> {
-    let scripts_to_match: Vec<_> = candidate_spks.into_iter().map(|spk| spk.as_ref()).collect();
+fn check_block(blkfilter: BlockFilter, blkhash: BlockHash, candidate_spks: Vec<&[u8; 34]>, owned_spks: Vec<Vec<u8>> ) -> Result<bool> {
 
-    // todo check inputs aswell
+    // check output scripts
+    let mut scripts_to_match: Vec<_> = candidate_spks.into_iter().map(|spk| spk.as_ref()).collect();
+
+    // check input scripts
+    scripts_to_match.extend(owned_spks.iter().map(|spk| spk.as_slice()));
 
     // note: match will always return true for an empty query!
     if scripts_to_match.len() > 0 {
@@ -237,20 +271,22 @@ fn get_script_to_secret_map(sp_receiver: &Receiver, tweak_data_vec: Vec<String>,
 }
 
 // possible block has been found, scan the block
-fn scan_block(
+fn scan_block_outputs(
     sp_receiver: &Receiver,
-    block: Block,
+    txdata: &Vec<Transaction>,
+    blkheight: u64,
     spk2secret: HashMap<[u8; 34], PublicKey>,
-) -> Result<Vec<OwnedOutput>> {
-    let blkheight = block.bip34_block_height()?;
-    let mut res: Vec<OwnedOutput> = vec![];
+) -> Result<Vec<(OutPoint, OwnedOutput)>> {
+    let mut res: Vec<(OutPoint, OwnedOutput)> = vec![];
 
-    for tx in block.txdata.into_iter() {
-        let txid = tx.txid();
+    // loop over outputs
+    for tx in txdata {
+        let txid_str = tx.txid().to_string();
 
         // collect all taproot outputs from transaction
-        let p2tr_outs: Vec<(usize, TxOut)> = tx.output
-            .into_iter()
+        let p2tr_outs: Vec<(usize, &TxOut)> = tx
+            .output
+            .iter()
             .enumerate()
             .filter(|(_, o)| o.script_pubkey.is_v1_p2tr())
             .collect();
@@ -284,15 +320,22 @@ fn scan_block(
                 Ok(key) => {
                     if let Some(scalar) = ours.get(&key) {
                         match SecretKey::from_slice(&scalar.to_be_bytes()) {
-                            Ok(tweak) => Some(OwnedOutput {
-                                txoutpoint: OutPoint { txid, vout: *i as u32 }.to_string(),
-                                blockheight: blkheight as u32,
-                                tweak: hex::encode(tweak.secret_bytes()),
-                                amount: o.value,
-                                script: hex::encode(o.script_pubkey.as_bytes()),
-                                spent: false,
-                                spent_by: None,
-                            }),
+                            Ok(tweak) => {
+                                let outpoint = bitcoin::OutPoint {
+                                    txid: bitcoin::Txid::from_str(&txid_str).unwrap(),
+                                    vout: *i as u32,
+
+                                };
+                                Some((outpoint, OwnedOutput {
+                                    txoutpoint: outpoint.to_string(),
+                                    blockheight: blkheight as u32,
+                                    tweak: hex::encode(tweak.secret_bytes()),
+                                    amount: o.value,
+                                    script: hex::encode(o.script_pubkey.as_bytes()),
+                                    spent: false,
+                                    spent_by: None,
+                                }))
+                            },
                             Err(_) => None,
                         }
                     } else {
@@ -304,6 +347,33 @@ fn scan_block(
         }));
 
     }
-
     Ok(res)
+}
+
+fn scan_block_inputs(
+    sp_client: &SpClient,
+    txdata: Vec<Transaction>,
+) -> Result<Vec<OutPoint>> {
+    let mut found = vec![];
+
+    for tx in txdata {
+        for input in tx.input {
+
+            // temporary solution
+            let prevout = convert_old_outpoint_to_new(input.previous_output);
+
+            if sp_client.check_outpoint_owned(prevout) {
+                 found.push(prevout);
+            }
+        }
+    }
+    Ok(found)
+}
+
+// right now we have to do this because nakamoto is using a different version of rust-bitcoin
+fn convert_old_outpoint_to_new(outpoint: nakamoto::common::bitcoin::OutPoint) -> bitcoin::OutPoint {
+    let txid = bitcoin::Txid::from_str(&outpoint.txid.to_string()).unwrap();
+    let vout = outpoint.vout;
+
+    bitcoin::OutPoint::new(txid, vout)
 }
