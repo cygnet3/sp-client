@@ -237,6 +237,67 @@ impl SpClient {
         Ok(())
     }
 
+    pub fn set_fees(psbt: &mut Psbt, fee_rate: u32, payer: String) -> Result<()> {
+        let payer_vouts: Vec<u32> = match SilentPaymentAddress::try_from(payer.clone()) {
+            Ok(sp_address) => {
+                psbt.outputs.iter().enumerate()
+                    .filter_map(|(i, o)| {
+                        if let Some(value) = o.proprietary.get(&raw::ProprietaryKey {
+                            prefix: PSBT_SP_PREFIX.as_bytes().to_vec(),
+                            subtype: PSBT_SP_SUBTYPE,
+                            key: PSBT_SP_ADDRESS_KEY.as_bytes().to_vec()
+                        }) {
+                            let candidate = SilentPaymentAddress::try_from(deserialize::<String>(&value).unwrap()).unwrap();
+                            if sp_address == candidate {Some(i as u32)} else {None}
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            },
+            Err(_) => {
+                let address = Address::from_str(&payer)?;
+                let spk = address.assume_checked().script_pubkey();
+                psbt.unsigned_tx.output.iter().enumerate()
+                    .filter_map(|(i, o)| {
+                        if o.script_pubkey == spk { Some(i as u32)} else {None}
+                    })
+                    .collect() // Actually we should have only one output for normal address
+            },
+        };
+
+        if payer_vouts.is_empty() {return Err(Error::msg("Payer is not part of this transaction"))}
+
+        // check against the total amt in inputs
+        let total_input_amt: u64 = psbt.iter_funding_utxos().try_fold(0u64, |sum, utxo_result| {
+            utxo_result.map(|utxo| sum + utxo.value.to_sat())
+        })?;
+
+        // total amt in outputs should be equal
+        let total_output_amt: u64 = psbt.unsigned_tx.output.iter().fold(0, |sum, add| sum + add.value.to_sat());
+        
+        if total_input_amt != total_output_amt {
+            return Err(Error::msg("Total inputs/outputs amount is not the same"));
+        }
+
+        // now compute the size of the tx
+        let fake = Self::sign_psbt_fake(psbt);
+        let vsize = fake.vsize();
+
+        // absolut amount of fees
+        let fee_amt: u64 = (fee_rate * vsize as u32).into();
+
+        // now deduce the fees from one of the payer outputs
+        let mut rng = bip39::rand::thread_rng();
+        if let Some(deduce_from) = payer_vouts.choose(&mut rng) {
+            let output = &mut psbt.unsigned_tx.output[*deduce_from as usize];
+            let old_value = output.value;
+            output.value = old_value - Amount::from_sat(fee_amt);
+        } else {return Err(Error::msg("no payer vout"))}
+
+        Ok(())
+    }
+
     pub fn create_new_psbt(inputs: Vec<OwnedOutput>, recipients: Vec<Recipient>) -> Result<Psbt> {
         let mut network: Option<Network> = None;
         let mut tx_in: Vec<bitcoin::TxIn> = vec![];
@@ -389,6 +450,21 @@ impl SpClient {
         };
         let msg = Message::from_digest(sighash.into_32());
         Ok((msg, hash_ty.into()))
+    }
+
+    // Sign a transaction with garbage, used for easier fee estimation
+    fn sign_psbt_fake(psbt: &Psbt) -> Transaction {
+        let mut fake_psbt = psbt.clone();
+
+        let fake_sig = [1u8;64];
+
+        for i in fake_psbt.inputs.iter_mut() {
+            i.tap_key_sig = Some(Signature::from_slice(&fake_sig).unwrap());
+        }
+
+        Self::finalize_psbt(&mut fake_psbt).unwrap();
+        let tx = fake_psbt.extract_tx().expect("Invalid fake tx");
+        tx
     }
 
     pub fn sign_psbt(
