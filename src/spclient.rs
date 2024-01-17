@@ -202,6 +202,60 @@ impl SpClient {
         self.scan_sk.clone()
     }
 
+    pub fn fill_sp_outputs(&self, psbt: &mut Psbt) -> Result<()> {
+        let b_spend = match self.spend_key {
+            SpendKey::Secret(key) => key,
+            SpendKey::Public(_) => return Err(Error::msg("Watch-only wallet, can't spend"))
+        };
+
+        let mut input_privkeys: Vec<SecretKey> = vec![];
+        for (i, input) in psbt.inputs.iter().enumerate() {
+            if let Some(tweak) = input.proprietary.get(&raw::ProprietaryKey {
+                prefix: PSBT_SP_PREFIX.as_bytes().to_vec(),
+                subtype: PSBT_SP_SUBTYPE,
+                key: PSBT_SP_TWEAK_KEY.as_bytes().to_vec()
+            }) {
+                let mut buffer = [0u8;32];
+                if tweak.len() != 32 {return Err(Error::msg(format!("Invalid tweak at input {}", i)))}
+                buffer.copy_from_slice(tweak.as_slice());
+                let scalar = Scalar::from_be_bytes(buffer)?;
+                input_privkeys.push(b_spend.add_tweak(&scalar)?);
+            } else {
+                // For now all inputs belong to us
+                return Err(Error::msg(format!("Missing tweak at input {}", i)));
+            }
+        }
+
+        let a_sum = Self::get_a_sum_secret_keys(&input_privkeys);
+        let outpoints: Vec<(String, u32)> = psbt.unsigned_tx.input.iter()
+            .map(|i| {
+                let prev_out = i.previous_output;
+                (prev_out.txid.to_string(), prev_out.vout)
+            })
+            .collect();
+        let outpoints_hash: Scalar = sp_utils::hash_outpoints(&outpoints, a_sum.public_key(&Secp256k1::signing_only()))?;
+        let partial_secret = sp_utils::sending::sender_calculate_partial_secret(a_sum, outpoints_hash)?;
+        for (i, output) in psbt.unsigned_tx.output.iter_mut().enumerate() {
+            // get the sp address from psbt
+            let output_data = &psbt.outputs[i];
+            if let Some(value) = output_data.proprietary.get(&raw::ProprietaryKey {
+                prefix: PSBT_SP_PREFIX.as_bytes().to_vec(),
+                subtype: PSBT_SP_SUBTYPE,
+                key: PSBT_SP_ADDRESS_KEY.as_bytes().to_vec()
+            }) {
+                // Create the right output key
+                let sp_address = SilentPaymentAddress::try_from(deserialize::<String>(&value)?)?;
+                let output_key = silentpayments::sending::generate_recipient_pubkey(sp_address.into(), partial_secret)?;
+                // update the script pubkey
+                output.script_pubkey = ScriptBuf::new_p2tr_tweaked(output_key.dangerous_assume_tweaked());
+            } else {
+                // Not a sp output
+                continue;
+            }
+        };
+        Ok(())
+    }
+
     pub fn create_new_psbt(inputs: Vec<OwnedOutput>, recipients: Vec<Recipient>) -> Result<Psbt> {
         let mut network: Option<Network> = None;
         let mut tx_in: Vec<bitcoin::TxIn> = vec![];
@@ -303,6 +357,30 @@ impl SpClient {
         }
 
         Ok(psbt)
+    }
+
+    pub fn get_a_sum_secret_keys(input: &Vec<SecretKey>) -> SecretKey {
+        let secp = Secp256k1::new();
+
+        let mut negated_keys: Vec<SecretKey> = vec![];
+
+        for key in input {
+            let (_, parity) = key.x_only_public_key(&secp);
+
+            if parity == bitcoin::secp256k1::Parity::Odd {
+                negated_keys.push(key.negate());
+            } else {
+                negated_keys.push(key.clone());
+            }
+        }
+
+        let (head, tail) = negated_keys.split_first().unwrap();
+
+        let result: SecretKey = tail
+            .iter()
+            .fold(*head, |acc, &item| acc.add_tweak(&item.into()).unwrap());
+
+        result
     }
 
 }

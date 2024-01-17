@@ -226,3 +226,16 @@ pub fn create_new_psbt(inputs: Vec<OwnedOutput>, recipients: Vec<Recipient>) -> 
     Ok(psbt.to_string())
 }
 
+pub fn fill_sp_outputs(path: String, label: String, psbt: String) -> Result<String, String> {
+    let sp_client: SpClient = match SpClient::try_init_from_disk(label, path) {
+        Ok(s) => s,
+        Err(_) => return Err("Wallet not found".to_owned())
+    };
+
+    let mut psbt = Psbt::from_str(&psbt).map_err(|e| e.to_string())?;
+
+    sp_client.fill_sp_outputs(&mut psbt).map_err(|e| e.to_string())?;
+
+    Ok(psbt.to_string())
+}
+
