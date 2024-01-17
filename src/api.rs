@@ -226,6 +226,15 @@ pub fn create_new_psbt(inputs: Vec<OwnedOutput>, recipients: Vec<Recipient>) -> 
     Ok(psbt.to_string())
 }
 
+// payer is an address, either Silent Payment or not
+pub fn add_fee_for_fee_rate(psbt: String, fee_rate: u32, payer: String) -> Result<String, String> {
+    let mut psbt = Psbt::from_str(&psbt).map_err(|e| e.to_string())?;
+
+    SpClient::set_fees(&mut psbt, fee_rate, payer).map_err(|e| e.to_string())?;
+
+    Ok(psbt.to_string())
+}
+
 pub fn fill_sp_outputs(path: String, label: String, psbt: String) -> Result<String, String> {
     let sp_client: SpClient = match SpClient::try_init_from_disk(label, path) {
         Ok(s) => s,
