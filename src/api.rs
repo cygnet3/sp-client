@@ -239,3 +239,19 @@ pub fn fill_sp_outputs(path: String, label: String, psbt: String) -> Result<Stri
     Ok(psbt.to_string())
 }
 
+pub fn sign_psbt(path: String, label: String, psbt: String, finalize: bool) -> Result<String, String> {
+    let sp_client: SpClient = match SpClient::try_init_from_disk(label, path) {
+        Ok(s) => s,
+        Err(_) => return Err("Wallet not found".to_owned())
+    };
+
+    let psbt = Psbt::from_str(&psbt).map_err(|e| e.to_string())?;
+
+    let mut signed = sp_client.sign_psbt(psbt).map_err(|e| e.to_string())?;
+
+    if finalize {
+        SpClient::finalize_psbt(&mut signed).map_err(|e| e.to_string())?;
+    }
+
+    Ok(signed.to_string())
+}

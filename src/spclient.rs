@@ -383,6 +383,107 @@ impl SpClient {
         result
     }
 
+    fn taproot_sighash<T: std::ops::Deref<Target = Transaction> + std::borrow::Borrow<Transaction>> (
+            input: &Input,
+            prevouts: &Vec<&TxOut>,
+            input_index: usize,
+            cache: &mut SighashCache<T>,
+            tapleaf_hash: Option<TapLeafHash>
+        ) -> Result<(Message, PsbtSighashType), Error> {
+        let prevouts = Prevouts::All(prevouts);
+
+        let hash_ty = input
+            .sighash_type
+            .map(|ty| ty.taproot_hash_ty())
+            .unwrap_or(Ok(bitcoin::TapSighashType::Default))?;
+
+        let sighash = match tapleaf_hash {
+            Some(leaf_hash) => cache.taproot_script_spend_signature_hash(
+                input_index,
+                &prevouts,
+                leaf_hash,
+                hash_ty,
+            )?,
+            None => cache.taproot_key_spend_signature_hash(input_index, &prevouts, hash_ty)?,
+        };
+        let msg = Message::from_digest(sighash.into_32());
+        Ok((msg, hash_ty.into()))
+    }
+
+    pub fn sign_psbt(
+            &self,
+            psbt: Psbt,
+        ) -> Result<Psbt> {
+        let b_spend = match self.spend_key {
+            SpendKey::Secret(key) => key,
+            SpendKey::Public(_) => return Err(Error::msg("Watch-only wallet, can't spend"))
+        };
+
+        let mut cache = SighashCache::new(&psbt.unsigned_tx);
+
+        let mut prevouts: Vec<&TxOut> = vec![];
+
+        for input in &psbt.inputs {
+            if let Some(witness_utxo) = &input.witness_utxo {
+                prevouts.push(witness_utxo);
+            }
+        }
+
+        let mut signed_psbt = psbt.clone();
+
+        let secp = Secp256k1::signing_only();
+
+        for (i, input) in psbt.inputs.iter().enumerate() {
+            
+            let tap_leaf_hash: Option<TapLeafHash> = None;
+
+            let (msg, sighash_ty) = Self::taproot_sighash(&input, &prevouts, i, &mut cache, tap_leaf_hash)?;
+
+            // Construct the signing key
+            let tweak = input.proprietary.get(&raw::ProprietaryKey {
+                prefix: PSBT_SP_PREFIX.as_bytes().to_vec(),
+                subtype: PSBT_SP_SUBTYPE,
+                key: PSBT_SP_TWEAK_KEY.as_bytes().to_vec()
+            });
+
+            if tweak.is_none() { panic!("Missing tweak") };
+
+            let tweak = SecretKey::from_slice(tweak.unwrap().as_slice()).unwrap();
+
+            let sk = b_spend.add_tweak(&tweak.into())?;
+
+            let keypair = Keypair::from_secret_key(&secp, &sk);
+
+            let sig = secp.sign_schnorr_with_rng(&msg, &keypair, &mut rand::thread_rng());
+
+            signed_psbt.inputs[i].tap_key_sig = Some(Signature { sig, hash_ty: sighash_ty.taproot_hash_ty()? });
+        }
+
+        Ok(signed_psbt)
+    }
+
+    pub(crate) fn finalize_psbt(psbt: &mut Psbt) -> Result<()> {
+        psbt.inputs.iter_mut()
+            .for_each(|i| {
+                let mut script_witness = Witness::new();
+                if let Some(sig) = i.tap_key_sig {
+                    script_witness.push(sig.to_vec());
+                } else {
+                    panic!("Missing signature");
+                }
+
+                i.final_script_witness = Some(script_witness);
+
+                // Clear all the data fields as per the spec.
+                i.tap_key_sig = None;
+                i.partial_sigs = BTreeMap::new();
+                i.sighash_type = None;
+                i.redeem_script = None;
+                i.witness_script = None;
+                i.bip32_derivation = BTreeMap::new();
+            });
+        Ok(())
+    }
 }
 
 pub fn derive_keys_from_mnemonic(
