@@ -5,7 +5,9 @@ use flutter_rust_bridge::StreamSink;
 use crate::{
     constants::{LogEntry, SyncStatus, WalletType},
     nakamotoclient,
-    spclient::{derive_keys_from_mnemonic, OwnedOutput, ScanProgress, SpClient, SpendKey},
+    spclient::{
+        derive_keys_from_mnemonic, OwnedOutput, Psbt, Recipient, ScanProgress, SpClient, SpendKey,
+    },
     stream::{self, loginfo},
 };
 
@@ -217,3 +219,10 @@ pub fn get_outputs(path: String, label: String) -> Result<Vec<OwnedOutput>, Stri
 
     Ok(sp_client.list_outpoints())
 }
+
+pub fn create_new_psbt(inputs: Vec<OwnedOutput>, recipients: Vec<Recipient>) -> Result<String, String> {
+    let psbt = SpClient::create_new_psbt(inputs, recipients).map_err(|e| e.to_string())?;
+
+    Ok(psbt.to_string())
+}
+
