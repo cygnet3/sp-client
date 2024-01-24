@@ -1,9 +1,5 @@
 use bip39::Mnemonic;
-use bitcoin::{
-    secp256k1::{Secp256k1, SecretKey, ONE_KEY, PublicKey},
-    util::bip32::{DerivationPath, ExtendedPrivKey},
-    Network, OutPoint, Script, Txid,
-};
+use bitcoin::{bip32::{DerivationPath, Xpriv}, secp256k1::{constants::SECRET_KEY_SIZE, PublicKey, Secp256k1, SecretKey}, Network};
 use serde::{Serialize, Deserialize};
 use silentpayments::receiving::Receiver;
 use std::str::FromStr;
@@ -85,8 +81,8 @@ impl SpClient {
     pub fn try_init_from_disk(label: String, path: String) -> Result<SpClient> {
         let empty = SpClient::new(
             label,
-            ONE_KEY,
-            SpendKey::Secret(ONE_KEY),
+            SecretKey::from_slice(&[1u8; SECRET_KEY_SIZE]).unwrap(),
+            SpendKey::Secret(SecretKey::from_slice(&[1u8; SECRET_KEY_SIZE]).unwrap()),
             0,
             false,
             path,
@@ -156,14 +152,14 @@ pub fn derive_keys_from_mnemonic(
 
     let network = if is_testnet { Network::Testnet } else { Network::Bitcoin };
 
-    let xprv = ExtendedPrivKey::new_master(network, &seed)?;
+    let xprv = Xpriv::new_master(network, &seed)?;
 
     let (scan_privkey, spend_privkey) = derive_keys_from_xprv(xprv)?;
 
     Ok((mnemonic, scan_privkey, spend_privkey))
 }
 
-fn derive_keys_from_xprv(xprv: ExtendedPrivKey) -> Result<(SecretKey, SecretKey)> {
+fn derive_keys_from_xprv(xprv: Xpriv) -> Result<(SecretKey, SecretKey)> {
     let (scan_path, spend_path) = match xprv.network {
         bitcoin::Network::Bitcoin => ("m/352h/0h/0h/1h/0", "m/352h/0h/0h/0h/0"),
         _ => ("m/352h/1h/0h/1h/0", "m/352h/1h/0h/0h/0"),
