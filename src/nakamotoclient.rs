@@ -2,15 +2,12 @@ use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::{atomic:
 
 use anyhow::{Error, Result};
 use bitcoin::{
-    secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey},
-    Block, Script, TxOut, XOnlyPublicKey, OutPoint, network::constants::ServiceFlags,
+    secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey}, XOnlyPublicKey
 };
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
 use nakamoto::{
-    client::{self, traits::Handle as _, Client, Config, Handle},
-    common::network::Services,
-    net::poll::Waker,
+    chain::Block, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut}, net::poll::Waker
 };
 use once_cell::sync::OnceCell;
 use silentpayments::receiving::Receiver;
@@ -179,17 +176,16 @@ pub fn scan_blocks(
                 .collect();
             let shared_secrets = shared_secrets?;
 
-            let candidate_spks: Result<Vec<Script>, _> = shared_secrets
+            let candidate_spks: Result<Vec<[u8; 34]>, _> = shared_secrets
                 .iter()
                 .map(|s| {
                     sp_receiver
                         .get_script_bytes_from_shared_secret(s)
-                        .map(|bytes| Script::from(bytes.to_vec()))
                 })
                 .collect();
             let candidate_spks = candidate_spks?;
 
-            let found = blkfilter.match_any(&blkhash, &mut candidate_spks.iter().map(|spk| spk.as_bytes()))?;
+            let found = blkfilter.match_any(&blkhash, &mut candidate_spks.iter().map(|spk| spk.as_ref()))?;
             if found {
                 handle.request_block(&blkhash)?;
                 let (blk, _) = blkchannel.recv()?;
@@ -224,7 +220,7 @@ pub fn scan_blocks(
 fn scan_block(
     sp_receiver: &Receiver,
     block: Block,
-    spk2secret: HashMap<Script, PublicKey>,
+    spk2secret: HashMap<[u8; 34], PublicKey>,
 ) -> Result<Vec<OwnedOutput>> {
     let blkheight = block.bip34_block_height()?;
     let mut res: Vec<OwnedOutput> = vec![];
@@ -244,7 +240,7 @@ fn scan_block(
         let mut secret: Option<PublicKey> = None;
         // Does this transaction contains one of the outputs we already found?
         for spk in p2tr_outs.iter().map(|(_, o)| &o.script_pubkey) {
-            if let Some(s) = spk2secret.get(spk) {
+            if let Some(s) = spk2secret.get(spk.as_bytes()) {
                 // we might have at least one output in this transaction
                 secret = Some(*s);
                 break;
