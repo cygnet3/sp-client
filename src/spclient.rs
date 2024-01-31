@@ -1,6 +1,9 @@
 use bip39::Mnemonic;
-use bitcoin::{bip32::{DerivationPath, Xpriv}, secp256k1::{constants::SECRET_KEY_SIZE, PublicKey, Secp256k1, SecretKey}, Network, OutPoint};
+use bitcoin::{bip32::{DerivationPath, Xpriv}, secp256k1::{constants::SECRET_KEY_SIZE, PublicKey, Secp256k1, SecretKey}, Network};
+use nakamoto::common::bitcoin::OutPoint;
 use serde::{Serialize, Deserialize};
+use serde_with::serde_as;
+use serde_with::DisplayFromStr;
 use silentpayments::receiving::Receiver;
 use std::{str::FromStr, collections::HashMap};
 
@@ -31,6 +34,7 @@ pub enum SpendKey {
     Public(PublicKey)
 }
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SpClient {
     pub label: String,
@@ -39,6 +43,7 @@ pub struct SpClient {
     pub sp_receiver: Receiver,
     pub birthday: u32,
     pub last_scan: u32,
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
     owned: HashMap<OutPoint, OwnedOutput>,
     writer: FileWriter,
 }
