@@ -1,11 +1,11 @@
 use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::atomic::{AtomicBool, Ordering}, thread::{self, sleep, JoinHandle}, time::{Duration, Instant}};
 
 use anyhow::{Error, Result};
-use bitcoin::{secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey}, OutPoint, XOnlyPublicKey };
+use bitcoin::{secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey}, XOnlyPublicKey };
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
 use nakamoto::{
-    chain::{filter::BlockFilter, BlockHash, Transaction}, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, TxOut}, net::poll::Waker
+    chain::{filter::BlockFilter, BlockHash, Transaction}, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut}, net::poll::Waker
 };
 use once_cell::sync::OnceCell;
 use silentpayments::receiving::Receiver;
@@ -281,7 +281,7 @@ fn scan_block_outputs(
 
     // loop over outputs
     for tx in txdata {
-        let txid_str = tx.txid().to_string();
+        let txid = tx.txid();
 
         // collect all taproot outputs from transaction
         let p2tr_outs: Vec<(usize, &TxOut)> = tx
@@ -321,8 +321,8 @@ fn scan_block_outputs(
                     if let Some(scalar) = ours.get(&key) {
                         match SecretKey::from_slice(&scalar.to_be_bytes()) {
                             Ok(tweak) => {
-                                let outpoint = bitcoin::OutPoint {
-                                    txid: bitcoin::Txid::from_str(&txid_str).unwrap(),
+                                let outpoint = OutPoint {
+                                    txid,
                                     vout: *i as u32,
 
                                 };
@@ -359,8 +359,7 @@ fn scan_block_inputs(
     for tx in txdata {
         for input in tx.input {
 
-            // temporary solution
-            let prevout = convert_old_outpoint_to_new(input.previous_output);
+            let prevout = input.previous_output;
 
             if sp_client.check_outpoint_owned(prevout) {
                  found.push(prevout);
@@ -368,12 +367,4 @@ fn scan_block_inputs(
         }
     }
     Ok(found)
-}
-
-// right now we have to do this because nakamoto is using a different version of rust-bitcoin
-fn convert_old_outpoint_to_new(outpoint: nakamoto::common::bitcoin::OutPoint) -> bitcoin::OutPoint {
-    let txid = bitcoin::Txid::from_str(&outpoint.txid.to_string()).unwrap();
-    let vout = outpoint.vout;
-
-    bitcoin::OutPoint::new(txid, vout)
 }
