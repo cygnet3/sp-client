@@ -1,7 +1,12 @@
-use std::{path::PathBuf, fs::{File, remove_file}, str::FromStr, io::{Write, Read}};
+use std::{
+    fs::{remove_file, File},
+    io::{Read, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 
-use anyhow::{Result, Error};
-use serde::{Serialize, Deserialize};
+use anyhow::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct FileWriter {
@@ -35,8 +40,6 @@ impl FileWriter {
     }
 
     pub fn delete(self) -> Result<()> {
-        remove_file(self.path)
-            .map_err(|e| Error::new(e))
+        remove_file(self.path).map_err(|e| Error::new(e))
     }
 }
-

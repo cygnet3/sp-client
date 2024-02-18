@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 type SecretKeyString = String;
 type PublicKeyString = String;
