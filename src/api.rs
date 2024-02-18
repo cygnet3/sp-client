@@ -38,10 +38,7 @@ pub fn create_nakamoto_run_stream(s: StreamSink<bool>) {
 }
 
 pub fn wallet_exists(label: String, files_dir: String) -> bool {
-    match SpClient::try_init_from_disk(label, files_dir) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    SpClient::try_init_from_disk(label, files_dir).is_ok()
 }
 
 pub fn setup_nakamoto(network: String, path: String) -> Result<(), String> {
@@ -79,7 +76,7 @@ pub fn setup(
             )
             .map_err(|e| e.to_string())?;
             sp_client.save_to_disk().map_err(|e| e.to_string())?;
-            return Ok(mnemonic.to_string());
+            Ok(mnemonic.to_string())
         }
         WalletType::Mnemonic(mnemonic) => {
             // We restore from seed
@@ -96,7 +93,7 @@ pub fn setup(
             )
             .map_err(|e| e.to_string())?;
             sp_client.save_to_disk().map_err(|e| e.to_string())?;
-            return Ok("".to_owned());
+            Ok("".to_owned())
         }
         WalletType::PrivateKeys(scan_sk_hex, spend_sk_hex) => {
             // We directly restore with the keys
@@ -114,7 +111,7 @@ pub fn setup(
             )
             .map_err(|e| e.to_string())?;
             sp_client.save_to_disk().map_err(|e| e.to_string())?;
-            return Ok("".to_owned());
+            Ok("".to_owned())
         }
         WalletType::ReadOnly(scan_sk_hex, spend_pk_hex) => {
             // We're only able to find payments but not to spend it
@@ -132,9 +129,9 @@ pub fn setup(
             )
             .map_err(|e| e.to_string())?;
             sp_client.save_to_disk().map_err(|e| e.to_string())?;
-            return Ok("".to_owned());
+            Ok("".to_owned())
         }
-    };
+    }
 }
 
 /// Change wallet birthday
@@ -146,7 +143,7 @@ pub fn change_birthday(path: String, label: String, birthday: u32) -> Result<(),
             sp_client.birthday = birthday;
             sp_client.save_to_disk().map_err(|e| e.to_string())
         }
-        Err(_) => return Err("Wallet doesn't exist".to_owned()),
+        Err(_) => Err("Wallet doesn't exist".to_owned()),
     }
 }
 
@@ -158,14 +155,14 @@ pub fn reset_wallet(path: String, label: String) -> Result<(), String> {
             let new = sp_client.reset_from_blockheight(birthday);
             new.save_to_disk().map_err(|e| e.to_string())
         }
-        Err(_) => return Err("Wallet doesn't exist".to_owned()),
+        Err(_) => Err("Wallet doesn't exist".to_owned()),
     }
 }
 
 pub fn remove_wallet(path: String, label: String) -> Result<(), String> {
     match SpClient::try_init_from_disk(label, path) {
         Ok(sp_client) => sp_client.delete_from_disk().map_err(|e| e.to_string()),
-        Err(_) => return Err("Wallet doesn't exist".to_owned()),
+        Err(_) => Err("Wallet doesn't exist".to_owned()),
     }
 }
 
@@ -215,11 +212,10 @@ pub fn get_wallet_info(path: String, label: String) -> Result<WalletStatus, Stri
 }
 
 pub fn get_receiving_address(path: String, label: String) -> Result<String, String> {
-    let sp_client: SpClient;
-    match SpClient::try_init_from_disk(label, path) {
-        Ok(s) => sp_client = s,
+    let sp_client: SpClient = match SpClient::try_init_from_disk(label, path) {
+        Ok(s) => s,
         Err(_) => return Err("Wallet not found".to_owned()),
-    }
+    };
 
     Ok(sp_client.get_receiving_address())
 }

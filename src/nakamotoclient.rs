@@ -57,7 +57,10 @@ pub fn setup(network: String, path: String) -> Result<()> {
 }
 
 pub fn start_nakamoto_client() -> Result<(Handle<Waker>, JoinHandle<()>)> {
-    if let Err(_) = NAKAMOTO_RUN.compare_exchange(false, true, ORDERING, ORDERING) {
+    if NAKAMOTO_RUN
+        .compare_exchange(false, true, ORDERING, ORDERING)
+        .is_err()
+    {
         return Err(Error::msg("Nakamoto client is already running"));
     }
 
@@ -96,7 +99,7 @@ pub fn sync_blockchain(mut handle: Handle<Waker>) -> Result<()> {
 
     loop {
         let peer_count = handle.get_peers(ServiceFlags::NETWORK)?;
-        if peer_count.len() == 0 {
+        if peer_count.is_empty() {
             continue;
         };
         let (height, header, _) = handle.get_tip()?;
@@ -125,7 +128,7 @@ pub fn clean_db() -> Result<()> {
     }
 
     let cfg = NAKAMOTO_CONFIG.wait().clone();
-    std::fs::remove_dir_all(cfg.root).map_err(|e| Error::new(e))
+    std::fs::remove_dir_all(cfg.root).map_err(Error::new)
 }
 
 pub fn scan_blocks(
@@ -220,7 +223,7 @@ pub fn scan_blocks(
 
             // scan block for new outputs, and add them to our list
             let owned = scan_block_outputs(&sp_receiver, &blk.txdata, blkheight, spk2secret)?;
-            if owned.len() > 0 {
+            if !owned.is_empty() {
                 sp_client.extend_owned(owned);
                 send_amount_update(sp_client.get_total_amt());
 
@@ -233,7 +236,7 @@ pub fn scan_blocks(
 
             // search inputs and mark as spent
             let inputs_found = scan_block_inputs(&sp_client, blk.txdata)?;
-            if inputs_found.len() > 0 {
+            if !inputs_found.is_empty() {
                 for outpoint in inputs_found {
                     sp_client.mark_outpoint_spent(outpoint)?;
                 }
@@ -273,7 +276,7 @@ fn check_block(
     scripts_to_match.extend(owned_spks.iter().map(|spk| spk.as_slice()));
 
     // note: match will always return true for an empty query!
-    if scripts_to_match.len() > 0 {
+    if !scripts_to_match.is_empty() {
         Ok(blkfilter.match_any(&blkhash, &mut scripts_to_match.into_iter())?)
     } else {
         Ok(false)
@@ -290,9 +293,8 @@ fn get_script_to_secret_map(
     let shared_secrets: Result<Vec<PublicKey>> = tweak_data_vec
         .into_iter()
         .map(|s| {
-            let x = PublicKey::from_str(&s).map_err(|e| Error::new(e))?;
-            x.mul_tweak(secp, scan_key_scalar)
-                .map_err(|e| Error::new(e))
+            let x = PublicKey::from_str(&s).map_err(Error::new)?;
+            x.mul_tweak(secp, scan_key_scalar).map_err(Error::new)
         })
         .collect();
     let shared_secrets = shared_secrets?;
@@ -348,8 +350,7 @@ fn scan_block_outputs(
         let xonlykeys: Result<Vec<XOnlyPublicKey>> = p2tr_outs
             .iter()
             .map(|(_, o)| {
-                XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..])
-                    .map_err(|e| Error::new(e))
+                XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..]).map_err(Error::new)
             })
             .collect();
 
