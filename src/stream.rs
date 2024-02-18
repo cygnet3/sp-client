@@ -34,10 +34,6 @@ pub fn create_nakamoto_run_stream(s: StreamSink<bool>) {
     *stream_sink = Some(s);
 }
 
-pub(crate) fn loginfo(text: &str) {
-    info!("{}", text);
-}
-
 pub(crate) fn send_amount_update(amount: u64) {
     let stream_sink = AMOUNT_STREAM_SINK.lock().unwrap();
     if let Some(stream_sink) = stream_sink.as_ref().clone() {

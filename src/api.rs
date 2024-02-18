@@ -1,11 +1,12 @@
 use std::str::FromStr;
 
 use flutter_rust_bridge::StreamSink;
+use log::info;
 
 use crate::{
     constants::{LogEntry, SyncStatus, WalletType}, logger, nakamotoclient, spclient::{
         derive_keys_from_mnemonic, OwnedOutput, Psbt, Recipient, ScanProgress, SpClient, SpendKey,
-    }, stream::{self, loginfo}
+    }, stream::{self}
 };
 
 const PASSPHRASE: &str = ""; // no passphrase for now
@@ -149,7 +150,7 @@ pub fn sync_blockchain() -> Result<(), String> {
     let (handle, join_handle) = nakamotoclient::start_nakamoto_client()
         .map_err(|e| e.to_string())?;
 
-    loginfo("Nakamoto started");
+    info!("Nakamoto started");
     let res = nakamotoclient::sync_blockchain(handle.clone())
         .map_err(|e| e.to_string());
 
@@ -162,7 +163,7 @@ pub fn sync_blockchain() -> Result<(), String> {
 pub fn scan_to_tip(path: String, label: String) -> Result<(), String> {
     let (handle, join_handle) = nakamotoclient::start_nakamoto_client()
         .map_err(|e| e.to_string())?;
-    loginfo("Nakamoto started");
+    info!("Nakamoto started");
 
     let res = match SpClient::try_init_from_disk(label, path) {
         Err(_) => Err("Wallet not found".to_owned()),
