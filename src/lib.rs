@@ -6,3 +6,4 @@ mod constants;
 mod electrumclient;
 mod spclient;
 mod stream;
+mod logger;

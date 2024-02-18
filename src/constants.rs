@@ -21,9 +21,9 @@ pub const PSBT_SP_ADDRESS_KEY: &str = "address";
 pub const NUMS: &str = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
 pub struct LogEntry {
-    // pub time_millis: i64,
-    // pub level: i32,
-    // pub tag: String,
+    pub time_millis: i64,
+    pub level: String,
+    pub tag: String,
     pub msg: String,
 }
 
