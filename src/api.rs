@@ -3,12 +3,9 @@ use std::str::FromStr;
 use flutter_rust_bridge::StreamSink;
 
 use crate::{
-    constants::{LogEntry, SyncStatus, WalletType},
-    nakamotoclient,
-    spclient::{
+    constants::{LogEntry, SyncStatus, WalletType}, logger, nakamotoclient, spclient::{
         derive_keys_from_mnemonic, OwnedOutput, Psbt, Recipient, ScanProgress, SpClient, SpendKey,
-    },
-    stream::{self, loginfo},
+    }, stream::{self, loginfo}
 };
 
 const PASSPHRASE: &str = ""; // no passphrase for now
@@ -20,7 +17,8 @@ pub struct WalletStatus {
 }
 
 pub fn create_log_stream(s: StreamSink<LogEntry>) {
-    stream::create_log_stream(s);
+    logger::init_logger(log::LevelFilter::Info);
+    logger::SendToDartLogger::set_stream_sink(s);
 }
 pub fn create_sync_stream(s: StreamSink<SyncStatus>) {
     stream::create_sync_stream(s);
