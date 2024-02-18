@@ -40,6 +40,6 @@ impl FileWriter {
     }
 
     pub fn delete(self) -> Result<()> {
-        remove_file(self.path).map_err(|e| Error::new(e))
+        remove_file(self.path).map_err(Error::new)
     }
 }

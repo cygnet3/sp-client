@@ -154,7 +154,7 @@ impl SpClient {
     }
 
     pub fn extend_owned(&mut self, owned: Vec<(OutPoint, OwnedOutput)>) {
-        self.owned.extend(owned.into_iter());
+        self.owned.extend(owned);
     }
 
     pub fn check_outpoint_owned(&self, outpoint: OutPoint) -> bool {
@@ -208,7 +208,7 @@ impl SpClient {
     }
 
     pub fn get_scan_key(&self) -> SecretKey {
-        self.scan_sk.clone()
+        self.scan_sk
     }
 
     pub fn fill_sp_outputs(&self, psbt: &mut Psbt) -> Result<()> {
@@ -260,7 +260,7 @@ impl SpClient {
                 key: PSBT_SP_ADDRESS_KEY.as_bytes().to_vec(),
             }) {
                 // Create the right output key
-                let sp_address = SilentPaymentAddress::try_from(deserialize::<String>(&value)?)?;
+                let sp_address = SilentPaymentAddress::try_from(deserialize::<String>(value)?)?;
                 let output_key = silentpayments::sending::generate_recipient_pubkey(
                     sp_address.into(),
                     partial_secret,
@@ -289,7 +289,7 @@ impl SpClient {
                         key: PSBT_SP_ADDRESS_KEY.as_bytes().to_vec(),
                     }) {
                         let candidate =
-                            SilentPaymentAddress::try_from(deserialize::<String>(&value).unwrap())
+                            SilentPaymentAddress::try_from(deserialize::<String>(value).unwrap())
                                 .unwrap();
                         if sp_address == candidate {
                             Some(i as u32)
@@ -505,7 +505,7 @@ impl SpClient {
             if parity == bitcoin::secp256k1::Parity::Odd {
                 negated_keys.push(key.negate());
             } else {
-                negated_keys.push(key.clone());
+                negated_keys.push(*key);
             }
         }
 
@@ -558,8 +558,8 @@ impl SpClient {
         }
 
         Self::finalize_psbt(&mut fake_psbt).unwrap();
-        let tx = fake_psbt.extract_tx().expect("Invalid fake tx");
-        tx
+
+        fake_psbt.extract_tx().expect("Invalid fake tx")
     }
 
     pub fn sign_psbt(&self, psbt: Psbt) -> Result<Psbt> {
@@ -586,7 +586,7 @@ impl SpClient {
             let tap_leaf_hash: Option<TapLeafHash> = None;
 
             let (msg, sighash_ty) =
-                Self::taproot_sighash(&input, &prevouts, i, &mut cache, tap_leaf_hash)?;
+                Self::taproot_sighash(input, &prevouts, i, &mut cache, tap_leaf_hash)?;
 
             // Construct the signing key
             let tweak = input.proprietary.get(&raw::ProprietaryKey {
