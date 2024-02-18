@@ -2,7 +2,6 @@ use std::sync::Mutex;
 
 use flutter_rust_bridge::StreamSink;
 use lazy_static::lazy_static;
-use log::info;
 
 use crate::constants::SyncStatus;
 use crate::spclient::ScanProgress;
@@ -32,10 +31,6 @@ pub fn create_scan_progress_stream(s: StreamSink<ScanProgress>) {
 pub fn create_nakamoto_run_stream(s: StreamSink<bool>) {
     let mut stream_sink = NAKAMOTO_RUN_STREAM_SINK.lock().unwrap();
     *stream_sink = Some(s);
-}
-
-pub(crate) fn loginfo(text: &str) {
-    info!("{}", text);
 }
 
 pub(crate) fn send_amount_update(amount: u64) {

@@ -4,6 +4,7 @@ use anyhow::{Error, Result};
 use bitcoin::{secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey}, XOnlyPublicKey };
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
+use log::info;
 use nakamoto::{
     chain::{filter::BlockFilter, BlockHash, Transaction}, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut}, net::poll::Waker
 };
@@ -12,7 +13,7 @@ use silentpayments::receiving::Receiver;
 
 use crate::{
     spclient::{OwnedOutput, ScanProgress, SpClient},
-    stream::{loginfo, send_amount_update, send_scan_progress, send_sync_progress, send_nakamoto_run}, constants::SyncStatus, electrumclient,
+    stream::{send_amount_update, send_scan_progress, send_sync_progress, send_nakamoto_run}, constants::SyncStatus, electrumclient,
 };
 
 const ORDERING: Ordering = Ordering::SeqCst;
@@ -27,11 +28,11 @@ pub fn setup(network: String, path: String) -> Result<()> {
         .map_err(|_| Error::msg("Invalid network"))?);
 
     cfg.root = PathBuf::from(format!("{}/db", path));
-    loginfo(format!("cfg.root = {:?}", cfg.root).as_str());
+    info!("cfg.root = {:?}", cfg.root);
 
     match NAKAMOTO_CONFIG.set(cfg) {
         Ok(_) => (),
-        Err(_) => { loginfo("NAKAMOTO_CONFIG already set"); }
+        Err(_) => { info!("NAKAMOTO_CONFIG already set"); }
     }
     Ok(())
 }
@@ -116,7 +117,7 @@ pub fn scan_blocks(
         return Err(Error::msg("Can't find peers with compact filters service"));
     } 
 
-    loginfo("scanning blocks");
+    info!("scanning blocks");
 
     let secp = Secp256k1::new();
     let filterchannel = handle.filters();
@@ -130,7 +131,7 @@ pub fn scan_blocks(
         n_blocks_to_scan = tip_height - scan_height;
     }
 
-    loginfo(format!("scan_height: {:?}", scan_height).as_str());
+    info!("scan_height: {:?}", scan_height);
 
     let start = scan_height + 1;
     let end = if scan_height + n_blocks_to_scan <= tip_height {
@@ -143,7 +144,7 @@ pub fn scan_blocks(
         return Ok(())
     }
 
-    loginfo(format!("start: {} end: {}", start, end).as_str());
+    info!("start: {} end: {}", start, end);
     handle.request_filters(start as u64..=end as u64)?;
 
     let mut tweak_data_map = electrum_client.sp_tweaks(start as usize)?;
@@ -225,7 +226,7 @@ pub fn scan_blocks(
     }
 
     // time elapsed for the scan
-    loginfo(&format!("Scan complete in {} seconds", start_time.elapsed().as_secs()));
+    info!("Scan complete in {} seconds", start_time.elapsed().as_secs());
 
     // update last_scan height
     sp_client.update_last_scan(end);

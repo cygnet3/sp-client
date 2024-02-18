@@ -23,6 +23,7 @@ use bitcoin::{
     taproot::Signature,
     Address, Amount, Network, ScriptBuf, TapLeafHash, Transaction, TxIn, TxOut, Witness,
 };
+use log::info;
 use nakamoto::common::bitcoin::OutPoint;
 
 use serde::{Deserialize, Serialize};
@@ -38,7 +39,7 @@ use anyhow::{Error, Result};
 use crate::constants::{
     NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE, PSBT_SP_TWEAK_KEY,
 };
-use crate::{db::FileWriter, stream::loginfo};
+use crate::db::FileWriter;
 
 pub use bitcoin::psbt::Psbt;
 
@@ -156,7 +157,7 @@ impl SpClient {
         let owned = self.owned.get_mut(&outpoint);
         match owned {
             Some(owned) => {
-                loginfo(format!("marked {} as spent", owned.txoutpoint).as_str());
+                info!("marked {} as spent", owned.txoutpoint);
                 owned.spent = true;
                 Ok(())
             }
