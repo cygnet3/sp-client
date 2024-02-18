@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 
-use silentpayments::receiving::Receiver;
+use silentpayments::{receiving::Receiver, utils::LabelHash};
 use silentpayments::sending::SilentPaymentAddress;
 use silentpayments::utils as sp_utils;
 
@@ -99,13 +99,14 @@ impl SpClient {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
         let sp_receiver: Receiver;
+        let change_label = LabelHash::from_b_scan_and_m(scan_sk, 0).to_scalar();
         match spend_key {
             SpendKey::Public(key) => {
-                sp_receiver = Receiver::new(0, scan_pubkey, key, is_testnet)?;
+                sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), is_testnet)?;
             },
             SpendKey::Secret(key) => {
                 let spend_pubkey = key.public_key(&secp);
-                sp_receiver = Receiver::new(0, scan_pubkey, spend_pubkey, is_testnet)?;
+                sp_receiver = Receiver::new(0, scan_pubkey, spend_pubkey, change_label.into(), is_testnet)?;
             }
         }
         let writer = FileWriter::new(path, label.clone())?;

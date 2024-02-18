@@ -315,7 +315,7 @@ fn scan_block_outputs(
             })
             .collect();
 
-        let ours = sp_receiver.scan_transaction(&secret.unwrap(), xonlykeys?)?;
+        let ours = sp_receiver.scan_transaction(&secret.unwrap(), xonlykeys?)?.remove(&None).unwrap();
         res.extend(p2tr_outs.iter().filter_map(|(i, o)| {
             match XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..]) {
                 Ok(key) => {
