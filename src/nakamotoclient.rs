@@ -32,6 +32,9 @@ use crate::{
     stream::{send_amount_update, send_nakamoto_run, send_scan_progress, send_sync_progress},
 };
 
+// this node has blockfilterindex=1, peerblockfilters=1
+const CORE_IP_ADDRESS: &str = "170.75.163.219:38333";
+
 const ORDERING: Ordering = Ordering::SeqCst;
 
 lazy_static! {
@@ -75,6 +78,8 @@ pub fn start_nakamoto_client() -> Result<(Handle<Waker>, JoinHandle<()>)> {
     let join_handle = thread::spawn(|| {
         client.run(cfg).unwrap();
     });
+
+    handle.connect(CORE_IP_ADDRESS.parse().unwrap()).unwrap();
 
     Ok((handle, join_handle))
 }
