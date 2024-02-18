@@ -1,19 +1,35 @@
-use std::{collections::HashMap, net, path::PathBuf, str::FromStr, sync::atomic::{AtomicBool, Ordering}, thread::{self, sleep, JoinHandle}, time::{Duration, Instant}};
+use std::{
+    collections::HashMap,
+    net,
+    path::PathBuf,
+    str::FromStr,
+    sync::atomic::{AtomicBool, Ordering},
+    thread::{self, sleep, JoinHandle},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Error, Result};
-use bitcoin::{secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey}, XOnlyPublicKey };
+use bitcoin::{
+    secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey},
+    XOnlyPublicKey,
+};
 use electrum_client::ElectrumApi;
 use lazy_static::lazy_static;
 use log::info;
 use nakamoto::{
-    chain::{filter::BlockFilter, BlockHash, Transaction}, client::{self, traits::Handle as _, Client, Config, Handle}, common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut}, net::poll::Waker
+    chain::{filter::BlockFilter, BlockHash, Transaction},
+    client::{self, traits::Handle as _, Client, Config, Handle},
+    common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut},
+    net::poll::Waker,
 };
 use once_cell::sync::OnceCell;
 use silentpayments::receiving::Receiver;
 
 use crate::{
+    constants::SyncStatus,
+    electrumclient,
     spclient::{OwnedOutput, ScanProgress, SpClient},
-    stream::{send_amount_update, send_scan_progress, send_sync_progress, send_nakamoto_run}, constants::SyncStatus, electrumclient,
+    stream::{send_amount_update, send_nakamoto_run, send_scan_progress, send_sync_progress},
 };
 
 const ORDERING: Ordering = Ordering::SeqCst;
@@ -24,15 +40,18 @@ lazy_static! {
 }
 
 pub fn setup(network: String, path: String) -> Result<()> {
-    let mut cfg = Config::new(client::Network::from_str(&network)
-        .map_err(|_| Error::msg("Invalid network"))?);
+    let mut cfg = Config::new(
+        client::Network::from_str(&network).map_err(|_| Error::msg("Invalid network"))?,
+    );
 
     cfg.root = PathBuf::from(format!("{}/db", path));
     info!("cfg.root = {:?}", cfg.root);
 
     match NAKAMOTO_CONFIG.set(cfg) {
         Ok(_) => (),
-        Err(_) => { info!("NAKAMOTO_CONFIG already set"); }
+        Err(_) => {
+            info!("NAKAMOTO_CONFIG already set");
+        }
     }
     Ok(())
 }
@@ -49,7 +68,7 @@ pub fn start_nakamoto_client() -> Result<(Handle<Waker>, JoinHandle<()>)> {
     type Reactor = nakamoto::net::poll::Reactor<net::TcpStream>;
     let client = Client::<Reactor>::new()?;
     let handle = client.handle();
-    
+
     let join_handle = thread::spawn(|| {
         client.run(cfg).unwrap();
     });
@@ -61,7 +80,9 @@ pub fn stop_nakamoto_client(handle: Handle<Waker>, join_handle: JoinHandle<()>) 
     NAKAMOTO_RUN.store(false, ORDERING);
     send_nakamoto_run(NAKAMOTO_RUN.load(ORDERING));
     handle.shutdown()?;
-    join_handle.join().map_err(|_e| Error::msg("Failed to join thread"))?;
+    join_handle
+        .join()
+        .map_err(|_e| Error::msg("Failed to join thread"))?;
     Ok(())
 }
 pub fn sync_blockchain(mut handle: Handle<Waker>) -> Result<()> {
@@ -69,18 +90,20 @@ pub fn sync_blockchain(mut handle: Handle<Waker>) -> Result<()> {
 
     if let Err(_) = handle.wait_for_peers(1, ServiceFlags::NETWORK) {
         return Err(Error::msg("Can't connect to peers"));
-    } 
+    }
 
     let mut last_height = 0;
 
     loop {
         let peer_count = handle.get_peers(ServiceFlags::NETWORK)?;
-        if peer_count.len() == 0 { continue };
+        if peer_count.len() == 0 {
+            continue;
+        };
         let (height, header, _) = handle.get_tip()?;
         send_sync_progress(SyncStatus {
             peer_count: peer_count.len() as u32,
             blockheight: height,
-            bestblockhash: header.block_hash().to_string()
+            bestblockhash: header.block_hash().to_string(),
         });
         if last_height == 0 || last_height < height {
             last_height = height;
@@ -94,14 +117,15 @@ pub fn sync_blockchain(mut handle: Handle<Waker>) -> Result<()> {
 }
 
 pub fn clean_db() -> Result<()> {
-    // Check that nakamoto isn't running 
+    // Check that nakamoto isn't running
     if NAKAMOTO_RUN.load(ORDERING) {
-        return Err(Error::msg("Nakamoto is still running, wait for it to complete first"));
+        return Err(Error::msg(
+            "Nakamoto is still running, wait for it to complete first",
+        ));
     }
 
     let cfg = NAKAMOTO_CONFIG.wait().clone();
-    std::fs::remove_dir_all(cfg.root)
-        .map_err(|e| Error::new(e))
+    std::fs::remove_dir_all(cfg.root).map_err(|e| Error::new(e))
 }
 
 pub fn scan_blocks(
@@ -115,7 +139,7 @@ pub fn scan_blocks(
 
     if let Err(_) = handle.wait_for_peers(1, ServiceFlags::COMPACT_FILTERS) {
         return Err(Error::msg("Can't find peers with compact filters service"));
-    } 
+    }
 
     info!("scanning blocks");
 
@@ -141,7 +165,7 @@ pub fn scan_blocks(
     };
 
     if start > end {
-        return Ok(())
+        return Ok(());
     }
 
     info!("start: {} end: {}", start, end);
@@ -205,7 +229,6 @@ pub fn scan_blocks(
                     current: n,
                     end,
                 });
-
             }
 
             // search inputs and mark as spent
@@ -226,7 +249,10 @@ pub fn scan_blocks(
     }
 
     // time elapsed for the scan
-    info!("Scan complete in {} seconds", start_time.elapsed().as_secs());
+    info!(
+        "Scan complete in {} seconds",
+        start_time.elapsed().as_secs()
+    );
 
     // update last_scan height
     sp_client.update_last_scan(end);
@@ -234,8 +260,12 @@ pub fn scan_blocks(
 }
 
 // Check if this block contains relevant transactions
-fn check_block(blkfilter: BlockFilter, blkhash: BlockHash, candidate_spks: Vec<&[u8; 34]>, owned_spks: Vec<Vec<u8>> ) -> Result<bool> {
-
+fn check_block(
+    blkfilter: BlockFilter,
+    blkhash: BlockHash,
+    candidate_spks: Vec<&[u8; 34]>,
+    owned_spks: Vec<Vec<u8>>,
+) -> Result<bool> {
     // check output scripts
     let mut scripts_to_match: Vec<_> = candidate_spks.into_iter().map(|spk| spk.as_ref()).collect();
 
@@ -250,8 +280,12 @@ fn check_block(blkfilter: BlockFilter, blkhash: BlockHash, candidate_spks: Vec<&
     }
 }
 
-fn get_script_to_secret_map(sp_receiver: &Receiver, tweak_data_vec: Vec<String>, scan_key_scalar: &Scalar, secp: &Secp256k1<All>) -> Result<HashMap<[u8; 34],PublicKey>> {
-
+fn get_script_to_secret_map(
+    sp_receiver: &Receiver,
+    tweak_data_vec: Vec<String>,
+    scan_key_scalar: &Scalar,
+    secp: &Secp256k1<All>,
+) -> Result<HashMap<[u8; 34], PublicKey>> {
     let mut res = HashMap::new();
     let shared_secrets: Result<Vec<PublicKey>> = tweak_data_vec
         .into_iter()
@@ -260,7 +294,7 @@ fn get_script_to_secret_map(sp_receiver: &Receiver, tweak_data_vec: Vec<String>,
             x.mul_tweak(secp, scan_key_scalar)
                 .map_err(|e| Error::new(e))
         })
-    .collect();
+        .collect();
     let shared_secrets = shared_secrets?;
 
     for shared_secret in shared_secrets {
@@ -292,7 +326,9 @@ fn scan_block_outputs(
             .filter(|(_, o)| o.script_pubkey.is_v1_p2tr())
             .collect();
 
-        if p2tr_outs.is_empty() { continue }; // no taproot output
+        if p2tr_outs.is_empty() {
+            continue;
+        }; // no taproot output
 
         let mut secret: Option<PublicKey> = None;
         // Does this transaction contains one of the outputs we already found?
@@ -304,7 +340,9 @@ fn scan_block_outputs(
             }
         }
 
-        if secret.is_none() { continue }; // we don't have a secret that matches any of the keys
+        if secret.is_none() {
+            continue;
+        }; // we don't have a secret that matches any of the keys
 
         // Now we can just run sp_receiver on all the p2tr outputs
         let xonlykeys: Result<Vec<XOnlyPublicKey>> = p2tr_outs
@@ -315,7 +353,10 @@ fn scan_block_outputs(
             })
             .collect();
 
-        let ours = sp_receiver.scan_transaction(&secret.unwrap(), xonlykeys?)?.remove(&None).unwrap();
+        let ours = sp_receiver
+            .scan_transaction(&secret.unwrap(), xonlykeys?)?
+            .remove(&None)
+            .unwrap();
         res.extend(p2tr_outs.iter().filter_map(|(i, o)| {
             match XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..]) {
                 Ok(key) => {
@@ -325,18 +366,20 @@ fn scan_block_outputs(
                                 let outpoint = OutPoint {
                                     txid,
                                     vout: *i as u32,
-
                                 };
-                                Some((outpoint, OwnedOutput {
-                                    txoutpoint: outpoint.to_string(),
-                                    blockheight: blkheight as u32,
-                                    tweak: hex::encode(tweak.secret_bytes()),
-                                    amount: o.value,
-                                    script: hex::encode(o.script_pubkey.as_bytes()),
-                                    spent: false,
-                                    spent_by: None,
-                                }))
-                            },
+                                Some((
+                                    outpoint,
+                                    OwnedOutput {
+                                        txoutpoint: outpoint.to_string(),
+                                        blockheight: blkheight as u32,
+                                        tweak: hex::encode(tweak.secret_bytes()),
+                                        amount: o.value,
+                                        script: hex::encode(o.script_pubkey.as_bytes()),
+                                        spent: false,
+                                        spent_by: None,
+                                    },
+                                ))
+                            }
                             Err(_) => None,
                         }
                     } else {
@@ -346,24 +389,19 @@ fn scan_block_outputs(
                 Err(_) => None,
             }
         }));
-
     }
     Ok(res)
 }
 
-fn scan_block_inputs(
-    sp_client: &SpClient,
-    txdata: Vec<Transaction>,
-) -> Result<Vec<OutPoint>> {
+fn scan_block_inputs(sp_client: &SpClient, txdata: Vec<Transaction>) -> Result<Vec<OutPoint>> {
     let mut found = vec![];
 
     for tx in txdata {
         for input in tx.input {
-
             let prevout = input.previous_output;
 
             if sp_client.check_outpoint_owned(prevout) {
-                 found.push(prevout);
+                found.push(prevout);
             }
         }
     }
