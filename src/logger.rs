@@ -12,29 +12,29 @@ use simplelog::{CombinedLogger, Config, SharedLogger};
 use crate::constants::LogEntry;
 
 lazy_static! {
-    static ref SEND_TO_DART_LOGGER_STREAM_SINK: RwLock<Option<StreamSink<LogEntry>>> =
-        RwLock::new(None);
+    static ref FLUTTER_LOGGER_STREAM_SINK: RwLock<Option<StreamSink<LogEntry>>> = RwLock::new(None);
 }
 
 static INIT_LOGGER_ONCE: Once = Once::new();
 
-pub fn init_logger(level: LevelFilter) {
+pub fn init_logger(level: LevelFilter, show_dependency_logs: bool) {
     INIT_LOGGER_ONCE.call_once(|| {
         CombinedLogger::init(vec![
-            Box::new(SendToDartLogger::new(level)),
+            Box::new(FlutterLogger::new(level, show_dependency_logs)),
             // todo add more loggers
         ])
         .unwrap();
     });
 }
 
-pub struct SendToDartLogger {
+pub struct FlutterLogger {
     level: LevelFilter,
+    log_dependencies: bool,
 }
 
-impl SendToDartLogger {
+impl FlutterLogger {
     pub fn set_stream_sink(stream_sink: StreamSink<LogEntry>) {
-        let mut guard = SEND_TO_DART_LOGGER_STREAM_SINK.write().unwrap();
+        let mut guard = FLUTTER_LOGGER_STREAM_SINK.write().unwrap();
         let overriding = guard.is_some();
 
         *guard = Some(stream_sink);
@@ -43,14 +43,17 @@ impl SendToDartLogger {
 
         if overriding {
             warn!(
-                "SendToDartLogger::set_stream_sink but already exist a sink, thus overriding. \
+                "FlutterLogger::set_stream_sink but already exist a sink, thus overriding. \
                 (This may or may not be a problem. It will happen normally if hot-reload Flutter app.)"
             );
         }
     }
 
-    pub fn new(level: LevelFilter) -> Self {
-        SendToDartLogger { level }
+    pub fn new(level: LevelFilter, log_dependencies: bool) -> Self {
+        FlutterLogger {
+            level,
+            log_dependencies,
+        }
     }
 
     fn record_to_entry(record: &Record) -> LogEntry {
@@ -61,7 +64,7 @@ impl SendToDartLogger {
 
         let level = record.level().to_string();
 
-        let tag = record.file().unwrap_or_else(|| record.target()).to_owned();
+        let tag = record.target().to_owned();
 
         let msg = format!("{}", record.args());
 
@@ -74,15 +77,21 @@ impl SendToDartLogger {
     }
 }
 
-impl Log for SendToDartLogger {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        true
+impl Log for FlutterLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        if metadata.target().starts_with("sp_backend") {
+            true
+        } else {
+            self.log_dependencies
+        }
     }
 
     fn log(&self, record: &Record) {
-        let entry = Self::record_to_entry(record);
-        if let Some(sink) = &*SEND_TO_DART_LOGGER_STREAM_SINK.read().unwrap() {
-            sink.add(entry);
+        if self.enabled(record.metadata()) {
+            let entry = Self::record_to_entry(record);
+            if let Some(sink) = &*FLUTTER_LOGGER_STREAM_SINK.read().unwrap() {
+                sink.add(entry);
+            }
         }
     }
 
@@ -91,7 +100,7 @@ impl Log for SendToDartLogger {
     }
 }
 
-impl SharedLogger for SendToDartLogger {
+impl SharedLogger for FlutterLogger {
     fn level(&self) -> LevelFilter {
         self.level
     }

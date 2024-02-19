@@ -21,6 +21,7 @@ use std::sync::Arc;
 // Section: imports
 
 use crate::constants::LogEntry;
+use crate::constants::LogLevel;
 use crate::constants::SyncStatus;
 use crate::constants::WalletType;
 use crate::spclient::OwnedOutput;
@@ -29,7 +30,11 @@ use crate::spclient::ScanProgress;
 
 // Section: wire functions
 
-fn wire_create_log_stream_impl(port_: MessagePort) {
+fn wire_create_log_stream_impl(
+    port_: MessagePort,
+    level: impl Wire2Api<LogLevel> + UnwindSafe,
+    log_dependencies: impl Wire2Api<bool> + UnwindSafe,
+) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, (), _>(
         WrapInfo {
             debug_name: "create_log_stream",
@@ -37,9 +42,13 @@ fn wire_create_log_stream_impl(port_: MessagePort) {
             mode: FfiCallMode::Stream,
         },
         move || {
+            let api_level = level.wire2api();
+            let api_log_dependencies = log_dependencies.wire2api();
             move |task_callback| {
                 Result::<_, ()>::Ok(create_log_stream(
                     task_callback.stream_sink::<_, LogEntry>(),
+                    api_level,
+                    api_log_dependencies,
                 ))
             }
         },
@@ -447,6 +456,25 @@ where
 impl Wire2Api<bool> for bool {
     fn wire2api(self) -> bool {
         self
+    }
+}
+
+impl Wire2Api<i32> for i32 {
+    fn wire2api(self) -> i32 {
+        self
+    }
+}
+
+impl Wire2Api<LogLevel> for i32 {
+    fn wire2api(self) -> LogLevel {
+        match self {
+            0 => LogLevel::Debug,
+            1 => LogLevel::Info,
+            2 => LogLevel::Warn,
+            3 => LogLevel::Error,
+            4 => LogLevel::Off,
+            _ => unreachable!("Invalid variant for LogLevel: {}", self),
+        }
     }
 }
 

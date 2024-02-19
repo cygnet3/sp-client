@@ -1,3 +1,4 @@
+use log::LevelFilter;
 use serde::{Deserialize, Serialize};
 
 type SecretKeyString = String;
@@ -25,6 +26,26 @@ pub struct LogEntry {
     pub level: String,
     pub tag: String,
     pub msg: String,
+}
+
+pub enum LogLevel {
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Off,
+}
+
+impl From<LogLevel> for LevelFilter {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Debug => LevelFilter::Debug,
+            LogLevel::Info => LevelFilter::Info,
+            LogLevel::Warn => LevelFilter::Warn,
+            LogLevel::Error => LevelFilter::Error,
+            LogLevel::Off => LevelFilter::Off,
+        }
+    }
 }
 
 pub struct SyncStatus {
