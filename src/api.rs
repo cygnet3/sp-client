@@ -4,12 +4,12 @@ use flutter_rust_bridge::StreamSink;
 use log::info;
 
 use crate::{
-    constants::{LogEntry, SyncStatus, WalletType},
+    constants::{LogEntry, LogLevel, SyncStatus, WalletType},
     logger, nakamotoclient,
     spclient::{
         derive_keys_from_mnemonic, OwnedOutput, Psbt, Recipient, ScanProgress, SpClient, SpendKey,
     },
-    stream::{self},
+    stream,
 };
 
 const PASSPHRASE: &str = ""; // no passphrase for now
@@ -20,9 +20,9 @@ pub struct WalletStatus {
     pub scan_height: u32,
 }
 
-pub fn create_log_stream(s: StreamSink<LogEntry>) {
-    logger::init_logger(log::LevelFilter::Info);
-    logger::SendToDartLogger::set_stream_sink(s);
+pub fn create_log_stream(s: StreamSink<LogEntry>, level: LogLevel, log_dependencies: bool) {
+    logger::init_logger(level.into(), log_dependencies);
+    logger::FlutterLogger::set_stream_sink(s);
 }
 pub fn create_sync_stream(s: StreamSink<SyncStatus>) {
     stream::create_sync_stream(s);

@@ -2,8 +2,8 @@ use super::*;
 // Section: wire functions
 
 #[no_mangle]
-pub extern "C" fn wire_create_log_stream(port_: i64) {
-    wire_create_log_stream_impl(port_)
+pub extern "C" fn wire_create_log_stream(port_: i64, level: i32, log_dependencies: bool) {
+    wire_create_log_stream_impl(port_, level, log_dependencies)
 }
 
 #[no_mangle]
@@ -230,6 +230,7 @@ impl Wire2Api<WalletType> for *mut wire_WalletType {
         Wire2Api::<WalletType>::wire2api(*wrap).into()
     }
 }
+
 impl Wire2Api<Vec<OwnedOutput>> for *mut wire_list_owned_output {
     fn wire2api(self) -> Vec<OwnedOutput> {
         let vec = unsafe {
