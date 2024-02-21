@@ -9,7 +9,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
 flutter_rust_bridge = "1"
-nakamoto = { git = "https://github.com/cloudhead/nakamoto", branch = "master" }
+nakamoto = { git = "https://github.com/cygnet3/nakamoto", branch = "master" }
 silentpayments = { git = "https://github.com/cygnet3/rust-silentpayments", branch = "master" }
 lazy_static = "1.4"
 electrum-client = { git = "https://github.com/cygnet3/rust-electrum-client", branch = "sp_tweaks" }
