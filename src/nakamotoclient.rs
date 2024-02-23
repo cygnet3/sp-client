@@ -355,20 +355,25 @@ fn scan_block_outputs(
             .collect();
 
         let ours = sp_receiver
-            .scan_transaction(&secret.unwrap(), xonlykeys?)?
-            .remove(&None)
-            .unwrap_or_default();
+            .scan_transaction(&secret.unwrap(), xonlykeys?)?;
+        for (label, map) in ours {
         res.extend(p2tr_outs.iter().filter_map(|(i, o)| {
             match XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..]) {
                 Ok(key) => {
-                    if let Some(scalar) = ours.get(&key) {
+                        if let Some(scalar) = map.get(&key) {
                         match SecretKey::from_slice(&scalar.to_be_bytes()) {
                             Ok(tweak) => {
                                 let outpoint = OutPoint {
                                     txid,
                                     vout: *i as u32,
                                 };
-                                Some((
+                                    let label_str: Option<String>;
+                                    if let Some(l) = &label {
+                                        label_str = Some(l.as_inner().to_be_bytes().to_lower_hex_string());
+                                    } else {
+                                        label_str = None;
+                                    }
+                                    return Some((
                                     outpoint,
                                     OwnedOutput {
                                         txoutpoint: outpoint.to_string(),
@@ -376,20 +381,23 @@ fn scan_block_outputs(
                                         tweak: hex::encode(tweak.secret_bytes()),
                                         amount: o.value,
                                         script: hex::encode(o.script_pubkey.as_bytes()),
+                                            label: label_str,
                                         spent: false,
                                         spent_by: None,
                                     },
-                                ))
+                                    ));
                             }
-                            Err(_) => None,
+                                Err(_) => {
+                                    return None;
+                                }
                         }
-                    } else {
+                        }
                         None
                     }
+                    Err(_) => None,
                 }
-                Err(_) => None,
+            }));
             }
-        }));
     }
     Ok(res)
 }
