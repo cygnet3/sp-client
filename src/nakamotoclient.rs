@@ -10,6 +10,7 @@ use std::{
 
 use anyhow::{Error, Result};
 use bitcoin::{
+    hex::{DisplayHex, FromHex},
     secp256k1::{All, PublicKey, Scalar, Secp256k1, SecretKey},
     XOnlyPublicKey,
 };
@@ -19,7 +20,7 @@ use log::info;
 use nakamoto::{
     chain::{filter::BlockFilter, BlockHash, Transaction},
     client::{self, traits::Handle as _, Client, Config, Handle},
-    common::bitcoin::{network::constants::ServiceFlags, OutPoint, TxOut},
+    common::bitcoin::{network::constants::ServiceFlags, psbt::serialize::Deserialize, OutPoint, TxOut},
     net::poll::Waker,
 };
 use once_cell::sync::OnceCell;
@@ -357,16 +358,16 @@ fn scan_block_outputs(
         let ours = sp_receiver
             .scan_transaction(&secret.unwrap(), xonlykeys?)?;
         for (label, map) in ours {
-        res.extend(p2tr_outs.iter().filter_map(|(i, o)| {
-            match XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..]) {
-                Ok(key) => {
+            res.extend(p2tr_outs.iter().filter_map(|(i, o)| {
+                match XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..]) {
+                    Ok(key) => {
                         if let Some(scalar) = map.get(&key) {
-                        match SecretKey::from_slice(&scalar.to_be_bytes()) {
-                            Ok(tweak) => {
-                                let outpoint = OutPoint {
-                                    txid,
-                                    vout: *i as u32,
-                                };
+                            match SecretKey::from_slice(&scalar.to_be_bytes()) {
+                                Ok(tweak) => {
+                                    let outpoint = OutPoint {
+                                        txid,
+                                        vout: *i as u32,
+                                    };
                                     let label_str: Option<String>;
                                     if let Some(l) = &label {
                                         label_str = Some(l.as_inner().to_be_bytes().to_lower_hex_string());
@@ -374,30 +375,30 @@ fn scan_block_outputs(
                                         label_str = None;
                                     }
                                     return Some((
-                                    outpoint,
-                                    OwnedOutput {
-                                        txoutpoint: outpoint.to_string(),
-                                        blockheight: blkheight as u32,
-                                        tweak: hex::encode(tweak.secret_bytes()),
-                                        amount: o.value,
-                                        script: hex::encode(o.script_pubkey.as_bytes()),
+                                        outpoint,
+                                        OwnedOutput {
+                                            txoutpoint: outpoint.to_string(),
+                                            blockheight: blkheight as u32,
+                                            tweak: hex::encode(tweak.secret_bytes()),
+                                            amount: o.value,
+                                            script: hex::encode(o.script_pubkey.as_bytes()),
                                             label: label_str,
-                                        spent: false,
-                                        spent_by: None,
-                                    },
+                                            spent: false,
+                                            spent_by: None,
+                                        },
                                     ));
-                            }
+                                }
                                 Err(_) => {
                                     return None;
                                 }
-                        }
+                            }
                         }
                         None
                     }
                     Err(_) => None,
                 }
             }));
-            }
+        }
     }
     Ok(res)
 }
@@ -415,4 +416,17 @@ fn scan_block_inputs(sp_client: &SpClient, txdata: Vec<Transaction>) -> Result<V
         }
     }
     Ok(found)
+}
+
+pub fn broadcast_transaction(mut handle: Handle<Waker>, tx: &str) -> Result<String> {
+    handle.set_timeout(Duration::from_secs(10));
+
+    if let Err(_) = handle.wait_for_peers(1, ServiceFlags::NETWORK) {
+        return Err(Error::msg("Can't connect to peers"));
+    }
+
+    let to_submit = Transaction::deserialize(&Vec::from_hex(tx)?)?;
+    let txid = to_submit.txid();
+    handle.submit_transaction(to_submit)?;
+    Ok(txid.to_lower_hex_string())
 }

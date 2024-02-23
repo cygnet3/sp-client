@@ -299,3 +299,24 @@ pub fn sign_psbt(
 
     Ok(signed.to_string())
 }
+
+pub fn extract_tx_from_psbt(psbt: String) -> Result<String, String> {
+    let psbt = Psbt::from_str(&psbt).map_err(|e| e.to_string())?;
+
+    let final_tx = psbt.extract_tx().map_err(|e| e.to_string())?;
+    Ok(serialize_hex(&final_tx))
+}
+
+pub fn broadcast_tx(tx: String) -> Result<String, String> {
+    let (handle, join_handle) =
+        nakamotoclient::start_nakamoto_client().map_err(|e| e.to_string())?;
+    info!("Nakamoto started");
+
+    let res = nakamotoclient::broadcast_transaction(handle.clone(), &tx).map_err(|e| e.to_string());
+
+    // if we succeeded, we must update the status of the spent outputs
+
+    nakamotoclient::stop_nakamoto_client(handle, join_handle).map_err(|e| e.to_string())?;
+
+    res 
+}
