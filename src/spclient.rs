@@ -37,7 +37,7 @@ use silentpayments::{receiving::Receiver, utils::LabelHash};
 use anyhow::{Error, Result};
 
 use crate::constants::{
-    NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE, PSBT_SP_TWEAK_KEY,
+    DUST, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE, PSBT_SP_TWEAK_KEY,
 };
 use crate::db::FileWriter;
 
@@ -49,6 +49,12 @@ pub struct ScanProgress {
     pub end: u32,
 }
 
+enum OutputSpendStatus {
+    Unspent,
+    Spent(String),
+    Mined(String)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct OwnedOutput {
     pub txoutpoint: String,
@@ -56,6 +62,7 @@ pub struct OwnedOutput {
     pub tweak: String,
     pub amount: u64,
     pub script: String,
+    pub label: Option<String>,
     pub spent: bool,
     pub spent_by: Option<String>,
 }
@@ -98,6 +105,7 @@ impl SpClient {
     ) -> Result<Self> {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
+        let change_label = sp_utils::LabelHash::from_b_scan_and_m(scan_sk, 0).to_scalar();
         let sp_receiver: Receiver;
         let change_label = LabelHash::from_b_scan_and_m(scan_sk, 0).to_scalar();
         match spend_key {
@@ -337,8 +345,10 @@ impl SpClient {
             .iter()
             .fold(0, |sum, add| sum + add.value.to_sat());
 
-        if total_input_amt != total_output_amt {
-            return Err(Error::msg("Total inputs/outputs amount is not the same"));
+        let dust = total_input_amt - total_output_amt;
+
+        if dust > DUST {
+            return Err(Error::msg("Missing a change output"));
         }
 
         // now compute the size of the tx
@@ -353,7 +363,7 @@ impl SpClient {
         if let Some(deduce_from) = payer_vouts.choose(&mut rng) {
             let output = &mut psbt.unsigned_tx.output[*deduce_from as usize];
             let old_value = output.value;
-            output.value = old_value - Amount::from_sat(fee_amt);
+            output.value = old_value - Amount::from_sat(fee_amt - dust); // account for eventual dust
         } else {
             return Err(Error::msg("no payer vout"));
         }
@@ -361,10 +371,15 @@ impl SpClient {
         Ok(())
     }
 
-    pub fn create_new_psbt(inputs: Vec<OwnedOutput>, recipients: Vec<Recipient>) -> Result<Psbt> {
-        let mut network: Option<Network> = None;
+    pub fn create_new_psbt(
+        &self,
+        inputs: Vec<OwnedOutput>,
+        mut recipients: Vec<Recipient>,
+    ) -> Result<Psbt> {
         let mut tx_in: Vec<bitcoin::TxIn> = vec![];
         let mut inputs_data: Vec<(ScriptBuf, u64, Scalar)> = vec![];
+        let mut total_input_amount = 0u64;
+        let mut total_output_amount = 0u64;
 
         for i in inputs {
             tx_in.push(TxIn {
@@ -376,68 +391,87 @@ impl SpClient {
 
             let scalar = Scalar::from_be_bytes(FromHex::from_hex(&i.tweak)?)?;
 
+            total_input_amount += i.amount;
+
             inputs_data.push((ScriptBuf::from_hex(&i.script)?, i.amount, scalar));
         }
 
-        // Since we don't have access to private materials for now we use a NUMS key as a placeholder
-        let placeholder_key = bitcoin::XOnlyPublicKey::from_str(NUMS)?.dangerous_assume_tweaked();
+        // We could compute the outputs key right away,
+        // but keeping things separated may be interesting,
+        // for example creating transactions in a watch-only wallet
+        // and using another signer
+        let placeholder_spk = ScriptBuf::new_p2tr_tweaked(
+            bitcoin::XOnlyPublicKey::from_str(NUMS)?.dangerous_assume_tweaked(),
+        );
 
         let _outputs: Result<Vec<bitcoin::TxOut>> = recipients
             .iter()
             .map(|o| {
-                let address: Address;
+                let script_pubkey: ScriptBuf;
 
                 match SilentPaymentAddress::try_from(o.address.as_str()) {
                     Ok(sp_address) => {
-                        let address_network = if sp_address.is_testnet() {
-                            Network::Testnet
-                        } else {
-                            Network::Bitcoin
-                        };
-
-                        if let Some(network) = network {
-                            if network != address_network {
-                                return Err(Error::msg(format!(
-                                    "Wrong network for address {}",
-                                    sp_address
-                                )));
-                            }
-                        } else {
-                            network = Some(address_network);
+                        if self.sp_receiver.is_testnet != sp_address.is_testnet() {
+                            return Err(Error::msg(format!(
+                                "Wrong network for address {}",
+                                sp_address
+                            )));
                         }
 
-                        address = Address::from_script(
-                            &ScriptBuf::new_p2tr_tweaked(placeholder_key),
-                            address_network,
-                        )
-                        .unwrap();
+                        script_pubkey = placeholder_spk.clone();
                     }
                     Err(_) => {
                         let unchecked_address = Address::from_str(&o.address)?; // TODO: handle better garbage string
 
-                        if let Some(network) = network {
-                            if network != *unchecked_address.network() {
-                                return Err(Error::msg(format!(
-                                    "Wrong network for address {}",
-                                    unchecked_address.assume_checked()
-                                )));
-                            }
-                        } else {
-                            network = Some(*unchecked_address.network());
+                        let address_is_testnet = match *unchecked_address.network() {
+                            Network::Bitcoin => false,
+                            _ => true,
+                        };
+
+                        if self.sp_receiver.is_testnet != address_is_testnet {
+                            return Err(Error::msg(format!(
+                                "Wrong network for address {}",
+                                unchecked_address.assume_checked()
+                            )));
                         }
 
-                        address = unchecked_address.assume_checked();
+                        script_pubkey = ScriptBuf::from_bytes(
+                            unchecked_address
+                                .assume_checked()
+                                .script_pubkey()
+                                .to_bytes(),
+                        );
                     }
                 }
 
+                total_output_amount += o.amount;
+
                 Ok(TxOut {
                     value: Amount::from_sat(o.amount),
-                    script_pubkey: address.script_pubkey(),
+                    script_pubkey,
                 })
             })
             .collect();
 
-        let outputs = _outputs?;
+        let mut outputs = _outputs?;
+
+        let change_amt = total_input_amount - total_output_amount;
+
+        if change_amt > DUST {
+            // Add change output
+            let change_address = self.sp_receiver.get_change_address();
+
+            outputs.push(TxOut {
+                value: Amount::from_sat(change_amt),
+                script_pubkey: placeholder_spk,
+            });
+
+            recipients.push(Recipient {
+                address: change_address,
+                amount: change_amt,
+                nb_outputs: 1,
+            });
+        }
 
         let tx = bitcoin::Transaction {
             version: bitcoin::transaction::Version(2),

@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use bitcoin::consensus::encode::serialize_hex;
 use flutter_rust_bridge::StreamSink;
 use log::info;
 
@@ -236,10 +237,19 @@ pub fn get_outputs(path: String, label: String) -> Result<Vec<OwnedOutput>, Stri
 }
 
 pub fn create_new_psbt(
+    label: String,
+    path: String,
     inputs: Vec<OwnedOutput>,
     recipients: Vec<Recipient>,
 ) -> Result<String, String> {
-    let psbt = SpClient::create_new_psbt(inputs, recipients).map_err(|e| e.to_string())?;
+    let sp_client: SpClient = match SpClient::try_init_from_disk(label, path) {
+        Ok(s) => s,
+        Err(_) => return Err("Wallet not found".to_owned()),
+    };
+
+    let psbt = sp_client
+        .create_new_psbt(inputs, recipients)
+        .map_err(|e| e.to_string())?;
 
     Ok(psbt.to_string())
 }
