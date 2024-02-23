@@ -142,10 +142,12 @@ pub extern "C" fn wire_get_outputs(
 #[no_mangle]
 pub extern "C" fn wire_create_new_psbt(
     port_: i64,
+    label: *mut wire_uint_8_list,
+    path: *mut wire_uint_8_list,
     inputs: *mut wire_list_owned_output,
     recipients: *mut wire_list_recipient,
 ) {
-    wire_create_new_psbt_impl(port_, inputs, recipients)
+    wire_create_new_psbt_impl(port_, label, path, inputs, recipients)
 }
 
 #[no_mangle]
@@ -177,6 +179,16 @@ pub extern "C" fn wire_sign_psbt(
     finalize: bool,
 ) {
     wire_sign_psbt_impl(port_, path, label, psbt, finalize)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_extract_tx_from_psbt(port_: i64, psbt: *mut wire_uint_8_list) {
+    wire_extract_tx_from_psbt_impl(port_, psbt)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_broadcast_tx(port_: i64, tx: *mut wire_uint_8_list) {
+    wire_broadcast_tx_impl(port_, tx)
 }
 
 // Section: allocate functions
@@ -258,6 +270,7 @@ impl Wire2Api<OwnedOutput> for wire_OwnedOutput {
             tweak: self.tweak.wire2api(),
             amount: self.amount.wire2api(),
             script: self.script.wire2api(),
+            label: self.label.wire2api(),
             spent: self.spent.wire2api(),
             spent_by: self.spent_by.wire2api(),
         }
@@ -328,6 +341,7 @@ pub struct wire_OwnedOutput {
     tweak: *mut wire_uint_8_list,
     amount: u64,
     script: *mut wire_uint_8_list,
+    label: *mut wire_uint_8_list,
     spent: bool,
     spent_by: *mut wire_uint_8_list,
 }
@@ -405,6 +419,7 @@ impl NewWithNullPtr for wire_OwnedOutput {
             tweak: core::ptr::null_mut(),
             amount: Default::default(),
             script: core::ptr::null_mut(),
+            label: core::ptr::null_mut(),
             spent: Default::default(),
             spent_by: core::ptr::null_mut(),
         }
