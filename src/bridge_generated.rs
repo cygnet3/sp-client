@@ -24,6 +24,7 @@ use crate::constants::LogEntry;
 use crate::constants::LogLevel;
 use crate::constants::SyncStatus;
 use crate::constants::WalletType;
+use crate::spclient::OutputSpendStatus;
 use crate::spclient::OwnedOutput;
 use crate::spclient::Recipient;
 use crate::spclient::ScanProgress;
@@ -544,6 +545,23 @@ impl rust2dart::IntoIntoDart<LogEntry> for LogEntry {
     }
 }
 
+impl support::IntoDart for OutputSpendStatus {
+    fn into_dart(self) -> support::DartAbi {
+        match self {
+            Self::Unspent => vec![0.into_dart()],
+            Self::Spent(field0) => vec![1.into_dart(), field0.into_into_dart().into_dart()],
+            Self::Mined(field0) => vec![2.into_dart(), field0.into_into_dart().into_dart()],
+        }
+        .into_dart()
+    }
+}
+impl support::IntoDartExceptPrimitive for OutputSpendStatus {}
+impl rust2dart::IntoIntoDart<OutputSpendStatus> for OutputSpendStatus {
+    fn into_into_dart(self) -> Self {
+        self
+    }
+}
+
 impl support::IntoDart for OwnedOutput {
     fn into_dart(self) -> support::DartAbi {
         vec![
@@ -553,8 +571,7 @@ impl support::IntoDart for OwnedOutput {
             self.amount.into_into_dart().into_dart(),
             self.script.into_into_dart().into_dart(),
             self.label.into_dart(),
-            self.spent.into_into_dart().into_dart(),
-            self.spent_by.into_dart(),
+            self.spend_status.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
