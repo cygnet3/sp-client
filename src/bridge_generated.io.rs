@@ -262,6 +262,24 @@ impl Wire2Api<Vec<Recipient>> for *mut wire_list_recipient {
     }
 }
 
+impl Wire2Api<OutputSpendStatus> for wire_OutputSpendStatus {
+    fn wire2api(self) -> OutputSpendStatus {
+        match self.tag {
+            0 => OutputSpendStatus::Unspent,
+            1 => unsafe {
+                let ans = support::box_from_leak_ptr(self.kind);
+                let ans = support::box_from_leak_ptr(ans.Spent);
+                OutputSpendStatus::Spent(ans.field0.wire2api())
+            },
+            2 => unsafe {
+                let ans = support::box_from_leak_ptr(self.kind);
+                let ans = support::box_from_leak_ptr(ans.Mined);
+                OutputSpendStatus::Mined(ans.field0.wire2api())
+            },
+            _ => unreachable!(),
+        }
+    }
+}
 impl Wire2Api<OwnedOutput> for wire_OwnedOutput {
     fn wire2api(self) -> OwnedOutput {
         OwnedOutput {
@@ -271,8 +289,7 @@ impl Wire2Api<OwnedOutput> for wire_OwnedOutput {
             amount: self.amount.wire2api(),
             script: self.script.wire2api(),
             label: self.label.wire2api(),
-            spent: self.spent.wire2api(),
-            spent_by: self.spent_by.wire2api(),
+            spend_status: self.spend_status.wire2api(),
         }
     }
 }
@@ -342,8 +359,7 @@ pub struct wire_OwnedOutput {
     amount: u64,
     script: *mut wire_uint_8_list,
     label: *mut wire_uint_8_list,
-    spent: bool,
-    spent_by: *mut wire_uint_8_list,
+    spend_status: wire_OutputSpendStatus,
 }
 
 #[repr(C)]
@@ -359,6 +375,36 @@ pub struct wire_Recipient {
 pub struct wire_uint_8_list {
     ptr: *mut u8,
     len: i32,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_OutputSpendStatus {
+    tag: i32,
+    kind: *mut OutputSpendStatusKind,
+}
+
+#[repr(C)]
+pub union OutputSpendStatusKind {
+    Unspent: *mut wire_OutputSpendStatus_Unspent,
+    Spent: *mut wire_OutputSpendStatus_Spent,
+    Mined: *mut wire_OutputSpendStatus_Mined,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_OutputSpendStatus_Unspent {}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_OutputSpendStatus_Spent {
+    field0: *mut wire_uint_8_list,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct wire_OutputSpendStatus_Mined {
+    field0: *mut wire_uint_8_list,
 }
 
 #[repr(C)]
@@ -411,6 +457,39 @@ impl<T> NewWithNullPtr for *mut T {
     }
 }
 
+impl Default for wire_OutputSpendStatus {
+    fn default() -> Self {
+        Self::new_with_null_ptr()
+    }
+}
+
+impl NewWithNullPtr for wire_OutputSpendStatus {
+    fn new_with_null_ptr() -> Self {
+        Self {
+            tag: -1,
+            kind: core::ptr::null_mut(),
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn inflate_OutputSpendStatus_Spent() -> *mut OutputSpendStatusKind {
+    support::new_leak_box_ptr(OutputSpendStatusKind {
+        Spent: support::new_leak_box_ptr(wire_OutputSpendStatus_Spent {
+            field0: core::ptr::null_mut(),
+        }),
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn inflate_OutputSpendStatus_Mined() -> *mut OutputSpendStatusKind {
+    support::new_leak_box_ptr(OutputSpendStatusKind {
+        Mined: support::new_leak_box_ptr(wire_OutputSpendStatus_Mined {
+            field0: core::ptr::null_mut(),
+        }),
+    })
+}
+
 impl NewWithNullPtr for wire_OwnedOutput {
     fn new_with_null_ptr() -> Self {
         Self {
@@ -420,8 +499,7 @@ impl NewWithNullPtr for wire_OwnedOutput {
             amount: Default::default(),
             script: core::ptr::null_mut(),
             label: core::ptr::null_mut(),
-            spent: Default::default(),
-            spent_by: core::ptr::null_mut(),
+            spend_status: Default::default(),
         }
     }
 }
