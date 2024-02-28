@@ -21,7 +21,8 @@ use bitcoin::{
     },
     sighash::{Prevouts, SighashCache},
     taproot::Signature,
-    Address, Amount, Network, ScriptBuf, TapLeafHash, Transaction, TxIn, TxOut, Witness,
+    Address, Amount, BlockHash, Network, ScriptBuf, TapLeafHash, Transaction, TxIn, TxOut, Txid,
+    Witness,
 };
 use log::info;
 use nakamoto::common::bitcoin::OutPoint;
@@ -49,10 +50,14 @@ pub struct ScanProgress {
     pub end: u32,
 }
 
-enum OutputSpendStatus {
+type SpendingTxId = String;
+type MinedInBlock = String;
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum OutputSpendStatus {
     Unspent,
-    Spent(String),
-    Mined(String)
+    Spent(SpendingTxId),
+    Mined(MinedInBlock),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -63,8 +68,7 @@ pub struct OwnedOutput {
     pub amount: u64,
     pub script: String,
     pub label: Option<String>,
-    pub spent: bool,
-    pub spent_by: Option<String>,
+    pub spend_status: OutputSpendStatus,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -105,7 +109,6 @@ impl SpClient {
     ) -> Result<Self> {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
-        let change_label = sp_utils::LabelHash::from_b_scan_and_m(scan_sk, 0).to_scalar();
         let sp_receiver: Receiver;
         let change_label = LabelHash::from_b_scan_and_m(scan_sk, 0).to_scalar();
         match spend_key {
@@ -154,10 +157,20 @@ impl SpClient {
         self.last_scan = scan_height;
     }
 
-    pub fn get_total_amt(&self) -> u64 {
+    pub fn get_spendable_amt(&self) -> u64 {
         self.owned
             .values()
-            .filter(|x| !x.spent)
+            .filter(|x| x.spend_status == OutputSpendStatus::Unspent)
+            .fold(0, |acc, x| acc + x.amount)
+    }
+
+    pub fn get_unconfirmed_amt(&self) -> u64 {
+        self.owned
+            .values()
+            .filter(|x| match x.spend_status {
+                OutputSpendStatus::Spent(_) => true,
+                _ => false,
+            })
             .fold(0, |acc, x| acc + x.amount)
     }
 
@@ -169,15 +182,35 @@ impl SpClient {
         self.owned.contains_key(&outpoint)
     }
 
-    pub fn mark_outpoint_spent(&mut self, outpoint: OutPoint) -> Result<()> {
-        let owned = self.owned.get_mut(&outpoint);
-        match owned {
-            Some(owned) => {
-                info!("marked {} as spent", owned.txoutpoint);
-                owned.spent = true;
-                Ok(())
+    pub fn mark_outpoint_spent(&mut self, outpoint: OutPoint, txid: Txid) -> Result<()> {
+        if let Some(owned) = self.owned.get_mut(&outpoint) {
+            match owned.spend_status {
+                OutputSpendStatus::Unspent => {
+                    info!("marking {} as spent by tx {}", owned.txoutpoint, txid);
+                    owned.spend_status = OutputSpendStatus::Spent(txid.to_string());
+                }
+                _ => return Err(Error::msg("owned outpoint is already spent")),
             }
-            None => Err(anyhow::anyhow!("owned outpoint not found")),
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("owned outpoint not found"))
+        }
+    }
+
+    pub fn mark_outpoint_mined(&mut self, outpoint: OutPoint, blkhash: BlockHash) -> Result<()> {
+        if let Some(owned) = self.owned.get_mut(&outpoint) {
+            match owned.spend_status {
+                OutputSpendStatus::Mined(_) => {
+                    return Err(Error::msg("owned outpoint is already mined"))
+                }
+                _ => {
+                    info!("marking {} as mined in block {}", owned.txoutpoint, blkhash);
+                    owned.spend_status = OutputSpendStatus::Mined(blkhash.to_string());
+                }
+            }
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("owned outpoint not found"))
         }
     }
 
@@ -194,7 +227,6 @@ impl SpClient {
             .filter(|o| o.1.blockheight <= blockheight)
             .collect();
         new.last_scan = blockheight;
-        new.get_total_amt();
 
         new
     }

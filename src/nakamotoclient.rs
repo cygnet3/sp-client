@@ -20,7 +20,9 @@ use log::info;
 use nakamoto::{
     chain::{filter::BlockFilter, BlockHash, Transaction},
     client::{self, traits::Handle as _, Client, Config, Handle},
-    common::bitcoin::{network::constants::ServiceFlags, psbt::serialize::Deserialize, OutPoint, TxOut},
+    common::bitcoin::{
+        network::constants::ServiceFlags, psbt::serialize::Deserialize, OutPoint, TxOut,
+    },
     net::poll::Waker,
 };
 use once_cell::sync::OnceCell;
@@ -29,7 +31,7 @@ use silentpayments::receiving::Receiver;
 use crate::{
     constants::SyncStatus,
     electrumclient,
-    spclient::{OwnedOutput, ScanProgress, SpClient},
+    spclient::{OutputSpendStatus, OwnedOutput, ScanProgress, SpClient},
     stream::{send_amount_update, send_nakamoto_run, send_scan_progress, send_sync_progress},
 };
 
@@ -207,7 +209,7 @@ pub fn scan_blocks(
             .list_outpoints()
             .iter()
             .filter_map(|x| {
-                if !x.spent {
+                if x.spend_status == OutputSpendStatus::Unspent {
                     let script = hex::decode(&x.script).unwrap();
                     Some(script)
                 } else {
@@ -226,7 +228,7 @@ pub fn scan_blocks(
             let owned = scan_block_outputs(&sp_receiver, &blk.txdata, blkheight, spk2secret)?;
             if !owned.is_empty() {
                 sp_client.extend_owned(owned);
-                send_amount_update(sp_client.get_total_amt());
+                send_amount_update(sp_client.get_spendable_amt());
 
                 send_scan_progress(ScanProgress {
                     start,
@@ -235,13 +237,16 @@ pub fn scan_blocks(
                 });
             }
 
-            // search inputs and mark as spent
+            // search inputs and mark as mined
             let inputs_found = scan_block_inputs(&sp_client, blk.txdata)?;
             if !inputs_found.is_empty() {
                 for outpoint in inputs_found {
-                    sp_client.mark_outpoint_spent(outpoint)?;
+                    sp_client.mark_outpoint_mined(
+                        outpoint,
+                        bitcoin::BlockHash::from_str(&blkhash.to_lower_hex_string())?,
+                    )?;
                 }
-                send_amount_update(sp_client.get_total_amt());
+                send_amount_update(sp_client.get_spendable_amt());
 
                 send_scan_progress(ScanProgress {
                     start,
@@ -355,8 +360,7 @@ fn scan_block_outputs(
             })
             .collect();
 
-        let ours = sp_receiver
-            .scan_transaction(&secret.unwrap(), xonlykeys?)?;
+        let ours = sp_receiver.scan_transaction(&secret.unwrap(), xonlykeys?)?;
         for (label, map) in ours {
             res.extend(p2tr_outs.iter().filter_map(|(i, o)| {
                 match XOnlyPublicKey::from_slice(&o.script_pubkey.as_bytes()[2..]) {
@@ -370,7 +374,8 @@ fn scan_block_outputs(
                                     };
                                     let label_str: Option<String>;
                                     if let Some(l) = &label {
-                                        label_str = Some(l.as_inner().to_be_bytes().to_lower_hex_string());
+                                        label_str =
+                                            Some(l.as_inner().to_be_bytes().to_lower_hex_string());
                                     } else {
                                         label_str = None;
                                     }
@@ -383,8 +388,7 @@ fn scan_block_outputs(
                                             amount: o.value,
                                             script: hex::encode(o.script_pubkey.as_bytes()),
                                             label: label_str,
-                                            spent: false,
-                                            spent_by: None,
+                                            spend_status: OutputSpendStatus::Unspent,
                                         },
                                     ));
                                 }

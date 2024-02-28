@@ -8,7 +8,8 @@ use crate::{
     constants::{LogEntry, LogLevel, SyncStatus, WalletType},
     logger, nakamotoclient,
     spclient::{
-        derive_keys_from_mnemonic, OwnedOutput, Psbt, Recipient, ScanProgress, SpClient, SpendKey,
+        derive_keys_from_mnemonic, OutputSpendStatus, OwnedOutput, Psbt, Recipient, ScanProgress,
+        SpClient, SpendKey,
     },
     stream,
 };
@@ -203,7 +204,7 @@ pub fn get_wallet_info(path: String, label: String) -> Result<WalletStatus, Stri
 
     let scan_height = sp_client.last_scan;
     let birthday = sp_client.birthday;
-    let amount = sp_client.get_total_amt();
+    let amount = sp_client.get_spendable_amt();
 
     Ok(WalletStatus {
         amount,
@@ -224,7 +225,10 @@ pub fn get_receiving_address(path: String, label: String) -> Result<String, Stri
 pub fn get_spendable_outputs(path: String, label: String) -> Result<Vec<OwnedOutput>, String> {
     let outputs = get_outputs(path, label)?;
 
-    Ok(outputs.into_iter().filter(|o| !o.spent).collect())
+    Ok(outputs
+        .into_iter()
+        .filter(|o| o.spend_status == OutputSpendStatus::Unspent)
+        .collect())
 }
 
 pub fn get_outputs(path: String, label: String) -> Result<Vec<OwnedOutput>, String> {
@@ -318,5 +322,5 @@ pub fn broadcast_tx(tx: String) -> Result<String, String> {
 
     nakamotoclient::stop_nakamoto_client(handle, join_handle).map_err(|e| e.to_string())?;
 
-    res 
+    res
 }
