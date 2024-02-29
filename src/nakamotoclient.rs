@@ -432,5 +432,5 @@ pub fn broadcast_transaction(mut handle: Handle<Waker>, tx: &str) -> Result<Stri
     let to_submit = Transaction::deserialize(&Vec::from_hex(tx)?)?;
     let txid = to_submit.txid();
     handle.submit_transaction(to_submit)?;
-    Ok(txid.to_lower_hex_string())
+    Ok(txid.to_string())
 }
