@@ -391,13 +391,16 @@ impl SpClient {
         let fee_amt: u64 = (fee_rate * vsize as u32).into();
 
         // now deduce the fees from one of the payer outputs
-        let mut rng = bip39::rand::thread_rng();
-        if let Some(deduce_from) = payer_vouts.choose(&mut rng) {
-            let output = &mut psbt.unsigned_tx.output[*deduce_from as usize];
-            let old_value = output.value;
-            output.value = old_value - Amount::from_sat(fee_amt - dust); // account for eventual dust
-        } else {
-            return Err(Error::msg("no payer vout"));
+        // TODO deduce fee from the change address
+        if fee_amt > dust {
+            let mut rng = bip39::rand::thread_rng();
+            if let Some(deduce_from) = payer_vouts.choose(&mut rng) {
+                let output = &mut psbt.unsigned_tx.output[*deduce_from as usize];
+                let old_value = output.value;
+                output.value = old_value - Amount::from_sat(fee_amt - dust); // account for eventual dust
+            } else {
+                return Err(Error::msg("no payer vout"));
+            }
         }
 
         Ok(())
