@@ -38,7 +38,7 @@ use silentpayments::{receiving::Receiver, utils::LabelHash};
 use anyhow::{Error, Result};
 
 use crate::constants::{
-    DUST, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE, PSBT_SP_TWEAK_KEY,
+    MAX_FEE_ALLOWED, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE, PSBT_SP_TWEAK_KEY,
 };
 use crate::db::FileWriter;
 
@@ -379,7 +379,7 @@ impl SpClient {
 
         let dust = total_input_amt - total_output_amt;
 
-        if dust > DUST {
+        if dust > MAX_FEE_ALLOWED {
             return Err(Error::msg("Missing a change output"));
         }
 
@@ -492,7 +492,7 @@ impl SpClient {
 
         let change_amt = total_input_amount - total_output_amount;
 
-        if change_amt > DUST {
+        if change_amt > MAX_FEE_ALLOWED {
             // Add change output
             let change_address = self.sp_receiver.get_change_address();
 
