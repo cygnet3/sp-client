@@ -167,6 +167,7 @@ impl SpClient {
             .fold(0, |acc, x| acc + x.amount)
     }
 
+    #[allow(dead_code)]
     pub fn get_unconfirmed_amt(&self) -> u64 {
         self.owned
             .values()
