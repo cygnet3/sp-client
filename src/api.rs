@@ -316,11 +316,31 @@ pub fn broadcast_tx(tx: String) -> Result<String, String> {
         nakamotoclient::start_nakamoto_client().map_err(|e| e.to_string())?;
     info!("Nakamoto started");
 
-    let res = nakamotoclient::broadcast_transaction(handle.clone(), &tx).map_err(|e| e.to_string());
+    let tx = nakamotoclient::deserialize_transaction(&tx).map_err(|e| e.to_string())?;
 
-    // if we succeeded, we must update the status of the spent outputs
+    let res = nakamotoclient::broadcast_transaction(handle.clone(), tx.clone())
+        .map_err(|e| e.to_string());
 
     nakamotoclient::stop_nakamoto_client(handle, join_handle).map_err(|e| e.to_string())?;
 
     res
+}
+
+pub fn mark_transaction_inputs_as_spent(
+    path: String,
+    label: String,
+    tx: String,
+) -> Result<(), String> {
+    let mut sp_client: SpClient = match SpClient::try_init_from_disk(label, path) {
+        Ok(s) => s,
+        Err(_) => return Err("Wallet not found".to_owned()),
+    };
+
+    let tx = nakamotoclient::deserialize_transaction(&tx).map_err(|e| e.to_string())?;
+
+    sp_client
+        .mark_transaction_inputs_as_spent(tx)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }

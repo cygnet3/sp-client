@@ -422,15 +422,19 @@ fn scan_block_inputs(sp_client: &SpClient, txdata: Vec<Transaction>) -> Result<V
     Ok(found)
 }
 
-pub fn broadcast_transaction(mut handle: Handle<Waker>, tx: &str) -> Result<String> {
+pub fn deserialize_transaction(tx: &str) -> Result<Transaction> {
+    Ok(Transaction::deserialize(&Vec::from_hex(tx)?)?)
+}
+
+pub fn broadcast_transaction(mut handle: Handle<Waker>, tx: Transaction) -> Result<String> {
     handle.set_timeout(Duration::from_secs(10));
 
     if let Err(_) = handle.wait_for_peers(1, ServiceFlags::NETWORK) {
         return Err(Error::msg("Can't connect to peers"));
     }
+    let txid = tx.txid().to_string();
 
-    let to_submit = Transaction::deserialize(&Vec::from_hex(tx)?)?;
-    let txid = to_submit.txid();
-    handle.submit_transaction(to_submit)?;
-    Ok(txid.to_string())
+    handle.submit_transaction(tx)?;
+
+    Ok(txid)
 }
