@@ -191,6 +191,16 @@ pub extern "C" fn wire_broadcast_tx(port_: i64, tx: *mut wire_uint_8_list) {
     wire_broadcast_tx_impl(port_, tx)
 }
 
+#[no_mangle]
+pub extern "C" fn wire_mark_transaction_inputs_as_spent(
+    port_: i64,
+    path: *mut wire_uint_8_list,
+    label: *mut wire_uint_8_list,
+    tx: *mut wire_uint_8_list,
+) {
+    wire_mark_transaction_inputs_as_spent_impl(port_, path, label, tx)
+}
+
 // Section: allocate functions
 
 #[no_mangle]

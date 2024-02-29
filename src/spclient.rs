@@ -21,11 +21,10 @@ use bitcoin::{
     },
     sighash::{Prevouts, SighashCache},
     taproot::Signature,
-    Address, Amount, BlockHash, Network, ScriptBuf, TapLeafHash, Transaction, TxIn, TxOut, Txid,
-    Witness,
+    Address, Amount, BlockHash, Network, ScriptBuf, TapLeafHash, Transaction, TxIn, TxOut, Witness,
 };
 use log::info;
-use nakamoto::common::bitcoin::OutPoint;
+use nakamoto::common::bitcoin::{OutPoint, Txid};
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -37,10 +36,14 @@ use silentpayments::{receiving::Receiver, utils::LabelHash};
 
 use anyhow::{Error, Result};
 
-use crate::constants::{
-    MAX_FEE_ALLOWED, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE, PSBT_SP_TWEAK_KEY,
-};
 use crate::db::FileWriter;
+use crate::{
+    constants::{
+        MAX_FEE_ALLOWED, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE,
+        PSBT_SP_TWEAK_KEY,
+    },
+    stream::send_amount_update,
+};
 
 pub use bitcoin::psbt::Psbt;
 
@@ -180,6 +183,22 @@ impl SpClient {
 
     pub fn check_outpoint_owned(&self, outpoint: OutPoint) -> bool {
         self.owned.contains_key(&outpoint)
+    }
+
+    pub fn mark_transaction_inputs_as_spent(
+        &mut self,
+        tx: nakamoto::chain::Transaction,
+    ) -> Result<()> {
+        let txid = tx.txid();
+
+        // note: this currently fails for collaborative transactions
+        for input in tx.input {
+            self.mark_outpoint_spent(input.previous_output, txid)?;
+        }
+
+        send_amount_update(self.get_spendable_amt());
+
+        self.save_to_disk()
     }
 
     pub fn mark_outpoint_spent(&mut self, outpoint: OutPoint, txid: Txid) -> Result<()> {
