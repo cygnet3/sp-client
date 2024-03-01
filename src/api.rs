@@ -348,3 +348,14 @@ pub fn mark_transaction_inputs_as_spent(
 
     Ok(())
 }
+
+pub fn show_mnemonic(path: String, label: String) -> Result<Option<String>, String> {
+    let sp_client: SpClient = match SpClient::try_init_from_disk(label, path) {
+        Ok(s) => s,
+        Err(_) => return Err("Wallet not found".to_owned()),
+    };
+
+    let mnemonic = sp_client.mnemonic;
+
+    Ok(mnemonic)
+}

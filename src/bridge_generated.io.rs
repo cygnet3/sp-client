@@ -201,6 +201,15 @@ pub extern "C" fn wire_mark_transaction_inputs_as_spent(
     wire_mark_transaction_inputs_as_spent_impl(port_, path, label, tx)
 }
 
+#[no_mangle]
+pub extern "C" fn wire_show_mnemonic(
+    port_: i64,
+    path: *mut wire_uint_8_list,
+    label: *mut wire_uint_8_list,
+) {
+    wire_show_mnemonic_impl(port_, path, label)
+}
+
 // Section: allocate functions
 
 #[no_mangle]
