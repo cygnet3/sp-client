@@ -93,7 +93,7 @@ pub struct SpClient {
     pub label: String,
     scan_sk: SecretKey,
     spend_key: SpendKey,
-    mnemonic: Option<String>,
+    pub mnemonic: Option<String>,
     pub sp_receiver: Receiver,
     pub birthday: u32,
     pub last_scan: u32,

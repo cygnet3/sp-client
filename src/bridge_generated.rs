@@ -481,6 +481,24 @@ fn wire_mark_transaction_inputs_as_spent_impl(
         },
     )
 }
+fn wire_show_mnemonic_impl(
+    port_: MessagePort,
+    path: impl Wire2Api<String> + UnwindSafe,
+    label: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, Option<String>, _>(
+        WrapInfo {
+            debug_name: "show_mnemonic",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_path = path.wire2api();
+            let api_label = label.wire2api();
+            move |task_callback| show_mnemonic(api_path, api_label)
+        },
+    )
+}
 // Section: wrapper structs
 
 // Section: static checks
