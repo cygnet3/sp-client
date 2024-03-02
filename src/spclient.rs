@@ -39,7 +39,7 @@ use anyhow::{Error, Result};
 use crate::db::FileWriter;
 use crate::{
     constants::{
-        MAX_FEE_ALLOWED, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE,
+        DUST_THRESHOLD, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE,
         PSBT_SP_TWEAK_KEY,
     },
     stream::send_amount_update,
@@ -403,7 +403,7 @@ impl SpClient {
 
         let dust = total_input_amt - total_output_amt;
 
-        if dust > MAX_FEE_ALLOWED {
+        if dust > DUST_THRESHOLD {
             return Err(Error::msg("Missing a change output"));
         }
 
@@ -516,7 +516,7 @@ impl SpClient {
 
         let change_amt = total_input_amount - total_output_amount;
 
-        if change_amt > MAX_FEE_ALLOWED {
+        if change_amt > DUST_THRESHOLD {
             // Add change output
             let change_address = self.sp_receiver.get_change_address();
 
