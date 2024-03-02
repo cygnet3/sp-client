@@ -306,9 +306,11 @@ fn get_script_to_secret_map(
     let shared_secrets = shared_secrets?;
 
     for shared_secret in shared_secrets {
-        let script_bytes = sp_receiver.get_script_bytes_from_shared_secret(&shared_secret)?;
+        let spks = sp_receiver.get_spks_from_shared_secret(&shared_secret)?;
 
-        res.insert(script_bytes, shared_secret);
+        for spk in spks.into_values() {
+            res.insert(spk, shared_secret);
+        }
     }
     Ok(res)
 }
