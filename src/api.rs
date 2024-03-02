@@ -320,12 +320,20 @@ pub fn broadcast_tx(tx: String) -> Result<String, String> {
         nakamotoclient::start_nakamoto_client().map_err(|e| e.to_string())?;
     info!("Nakamoto started");
 
-    let tx = nakamotoclient::deserialize_transaction(&tx).map_err(|e| e.to_string())?;
+    let tx_deserialized =
+        nakamotoclient::deserialize_transaction(&tx).map_err(|e| e.to_string())?;
 
-    let res = nakamotoclient::broadcast_transaction(handle.clone(), tx.clone())
+    let res = nakamotoclient::broadcast_transaction(handle.clone(), tx_deserialized)
         .map_err(|e| e.to_string());
 
     nakamotoclient::stop_nakamoto_client(handle, join_handle).map_err(|e| e.to_string())?;
+
+    // Also broadcast transaction using the electrum client.
+    // We currently do this as a backup to the nakamoto broadcasting, which seems to be inconsistent right now.
+    // This should be removed later when nakamoto is consistent.
+    // See issue: https://github.com/cloudhead/nakamoto/issues/154
+    crate::electrumclient::backup_broadcast_transaction_using_electrum(&tx)
+        .map_err(|e| e.to_string())?;
 
     res
 }
