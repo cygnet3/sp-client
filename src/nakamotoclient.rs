@@ -19,7 +19,7 @@ use lazy_static::lazy_static;
 use log::info;
 use nakamoto::{
     chain::{filter::BlockFilter, BlockHash, Transaction},
-    client::{self, traits::Handle as _, Client, Config, Handle},
+    client::{self, traits::Handle as _, Client, Config, Domain, Handle},
     common::bitcoin::{
         network::constants::ServiceFlags, psbt::serialize::Deserialize, OutPoint, TxOut,
     },
@@ -48,6 +48,7 @@ pub fn setup(network: String, path: String) -> Result<()> {
     );
 
     cfg.root = PathBuf::from(format!("{}/db", path));
+    cfg.domains = vec![Domain::IPV4];
     info!("cfg.root = {:?}", cfg.root);
 
     match NAKAMOTO_CONFIG.set(cfg) {
