@@ -315,6 +315,29 @@ impl SpClient {
             sp_utils::hash_outpoints(&outpoints, a_sum.public_key(&Secp256k1::signing_only()))?;
         let partial_secret =
             sp_utils::sending::sender_calculate_partial_secret(a_sum, outpoints_hash)?;
+
+        // get all the silent addresses
+        let mut sp_addresses: Vec<String> = Vec::with_capacity(psbt.outputs.len());
+        for output in psbt.outputs.iter() {
+            // get the sp address from psbt
+            if let Some(value) = output.proprietary.get(&raw::ProprietaryKey {
+                prefix: PSBT_SP_PREFIX.as_bytes().to_vec(),
+                subtype: PSBT_SP_SUBTYPE,
+                key: PSBT_SP_ADDRESS_KEY.as_bytes().to_vec(),
+            }) {
+                let sp_address = SilentPaymentAddress::try_from(deserialize::<String>(value)?)?;
+                sp_addresses.push(sp_address.into());
+            } else {
+                // Not a sp output
+                continue;
+            }
+        }
+
+        let mut sp_address2xonlypubkeys =
+            silentpayments::sending::generate_multiple_recipient_pubkeys(
+                sp_addresses,
+                partial_secret,
+            )?;
         for (i, output) in psbt.unsigned_tx.output.iter_mut().enumerate() {
             // get the sp address from psbt
             let output_data = &psbt.outputs[i];
@@ -323,15 +346,23 @@ impl SpClient {
                 subtype: PSBT_SP_SUBTYPE,
                 key: PSBT_SP_ADDRESS_KEY.as_bytes().to_vec(),
             }) {
-                // Create the right output key
                 let sp_address = SilentPaymentAddress::try_from(deserialize::<String>(value)?)?;
-                let output_key = silentpayments::sending::generate_recipient_pubkey(
-                    sp_address.into(),
-                    partial_secret,
-                )?;
-                // update the script pubkey
-                output.script_pubkey =
-                    ScriptBuf::new_p2tr_tweaked(output_key.dangerous_assume_tweaked());
+                if let Some(xonlypubkeys) = sp_address2xonlypubkeys.get_mut(&sp_address.to_string())
+                {
+                    if !xonlypubkeys.is_empty() {
+                        let output_key = xonlypubkeys.remove(0);
+                        // update the script pubkey
+                        output.script_pubkey =
+                            ScriptBuf::new_p2tr_tweaked(output_key.dangerous_assume_tweaked());
+                    } else {
+                        return Err(Error::msg(format!(
+                            "We're missing a key for address {}",
+                            sp_address
+                        )));
+                    }
+                } else {
+                    return Err(Error::msg(format!("Can't find address {}", sp_address)));
+                }
             } else {
                 // Not a sp output
                 continue;
