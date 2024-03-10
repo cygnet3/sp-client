@@ -154,19 +154,19 @@ pub fn scan_blocks(
     let filterchannel = handle.filters();
     let blkchannel = handle.blocks();
 
-    let scan_height = sp_client.last_scan;
+    let mut last_scan = sp_client.last_scan;
     let tip_height = handle.get_tip()?.0 as u32;
 
     // 0 means scan to tip
     if n_blocks_to_scan == 0 {
-        n_blocks_to_scan = tip_height - scan_height;
+        n_blocks_to_scan = tip_height - last_scan;
     }
 
-    info!("scan_height: {:?}", scan_height);
+    info!("last_scan: {:?}", last_scan);
 
-    let start = scan_height + 1;
-    let end = if scan_height + n_blocks_to_scan <= tip_height {
-        scan_height + n_blocks_to_scan
+    let start = last_scan + 1;
+    let end = if last_scan + n_blocks_to_scan <= tip_height {
+        last_scan + n_blocks_to_scan
     } else {
         tip_height
     };
@@ -197,6 +197,7 @@ pub fn scan_blocks(
 
         let spk2secret = match tweak_data_map.remove(&(blkheight as u32)) {
             Some(tweak_data_vec) => {
+                last_scan = last_scan.max(blkheight as u32);
                 get_script_to_secret_map(&sp_receiver, tweak_data_vec, &scan_key_scalar, &secp)?
             }
             None => HashMap::new(),
@@ -265,7 +266,7 @@ pub fn scan_blocks(
     );
 
     // update last_scan height
-    sp_client.update_last_scan(end);
+    sp_client.update_last_scan(last_scan);
     sp_client.save_to_disk()
 }
 
