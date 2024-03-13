@@ -115,7 +115,7 @@ impl SpClient {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
         let sp_receiver: Receiver;
-        let change_label = LabelHash::from_b_scan_and_m(scan_sk, 0).to_scalar();
+        let change_label = LabelHash::from_b_scan_and_m(scan_sk, 0).to_label();
         match spend_key {
             SpendKey::Public(key) => {
                 sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), is_testnet)?;
@@ -334,10 +334,7 @@ impl SpClient {
         }
 
         let mut sp_address2xonlypubkeys =
-            silentpayments::sending::generate_multiple_recipient_pubkeys(
-                sp_addresses,
-                partial_secret,
-            )?;
+            silentpayments::sending::generate_recipient_pubkeys(sp_addresses, partial_secret)?;
         for (i, output) in psbt.unsigned_tx.output.iter_mut().enumerate() {
             // get the sp address from psbt
             let output_data = &psbt.outputs[i];
