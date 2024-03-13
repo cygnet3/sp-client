@@ -30,9 +30,9 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 
-use silentpayments::sending::SilentPaymentAddress;
+use silentpayments::receiving::Receiver;
 use silentpayments::utils as sp_utils;
-use silentpayments::{receiving::Receiver, utils::LabelHash};
+use silentpayments::{receiving::Label, sending::SilentPaymentAddress};
 
 use anyhow::{Error, Result};
 
@@ -115,7 +115,7 @@ impl SpClient {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
         let sp_receiver: Receiver;
-        let change_label = LabelHash::from_b_scan_and_m(scan_sk, 0).to_label();
+        let change_label = Label::new(scan_sk, 0);
         match spend_key {
             SpendKey::Public(key) => {
                 sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), is_testnet)?;
@@ -311,10 +311,7 @@ impl SpClient {
                 (prev_out.txid.to_string(), prev_out.vout)
             })
             .collect();
-        let outpoints_hash: Scalar =
-            sp_utils::hash_outpoints(&outpoints, a_sum.public_key(&Secp256k1::signing_only()))?;
-        let partial_secret =
-            sp_utils::sending::sender_calculate_partial_secret(a_sum, outpoints_hash)?;
+        let partial_secret = sp_utils::sending::calculate_partial_secret(a_sum, &outpoints)?;
 
         // get all the silent addresses
         let mut sp_addresses: Vec<String> = Vec::with_capacity(psbt.outputs.len());
