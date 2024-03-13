@@ -281,7 +281,7 @@ impl SpClient {
             SpendKey::Public(_) => return Err(Error::msg("Watch-only wallet, can't spend")),
         };
 
-        let mut input_privkeys: Vec<SecretKey> = vec![];
+        let mut input_privkeys: Vec<(SecretKey, bool)> = vec![];
         for (i, input) in psbt.inputs.iter().enumerate() {
             if let Some(tweak) = input.proprietary.get(&raw::ProprietaryKey {
                 prefix: PSBT_SP_PREFIX.as_bytes().to_vec(),
@@ -294,14 +294,18 @@ impl SpClient {
                 }
                 buffer.copy_from_slice(tweak.as_slice());
                 let scalar = Scalar::from_be_bytes(buffer)?;
-                input_privkeys.push(b_spend.add_tweak(&scalar)?);
+
+                let input_privkey = b_spend.add_tweak(&scalar)?;
+
+                // we are a silent payment wallet, so all our keys are taproot
+                input_privkeys.push((input_privkey, true));
             } else {
                 // For now all inputs belong to us
                 return Err(Error::msg(format!("Missing tweak at input {}", i)));
             }
         }
 
-        let a_sum = Self::get_a_sum_secret_keys(&input_privkeys);
+        let a_sum = sp_utils::sending::get_a_sum_secret_keys(&input_privkeys)?;
         let outpoints: Vec<(String, u32)> = psbt
             .unsigned_tx
             .input
@@ -613,30 +617,6 @@ impl SpClient {
         }
 
         Ok(psbt)
-    }
-
-    pub fn get_a_sum_secret_keys(input: &Vec<SecretKey>) -> SecretKey {
-        let secp = Secp256k1::new();
-
-        let mut negated_keys: Vec<SecretKey> = vec![];
-
-        for key in input {
-            let (_, parity) = key.x_only_public_key(&secp);
-
-            if parity == bitcoin::secp256k1::Parity::Odd {
-                negated_keys.push(key.negate());
-            } else {
-                negated_keys.push(*key);
-            }
-        }
-
-        let (head, tail) = negated_keys.split_first().unwrap();
-
-        let result: SecretKey = tail
-            .iter()
-            .fold(*head, |acc, &item| acc.add_tweak(&item.into()).unwrap());
-
-        result
     }
 
     fn taproot_sighash<
