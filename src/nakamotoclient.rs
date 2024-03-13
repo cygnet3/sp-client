@@ -440,5 +440,7 @@ pub fn broadcast_transaction(mut handle: Handle<Waker>, tx: Transaction) -> Resu
 
     handle.submit_transaction(tx)?;
 
+    sleep(Duration::from_secs(2)); // this should be enough
+
     Ok(txid)
 }
