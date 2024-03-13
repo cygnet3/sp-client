@@ -365,6 +365,9 @@ impl SpClient {
                 continue;
             }
         }
+        for (_, xonlypubkeys) in sp_address2xonlypubkeys {
+            debug_assert!(xonlypubkeys.is_empty());
+        }
         Ok(())
     }
 
