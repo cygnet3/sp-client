@@ -36,22 +36,12 @@ use silentpayments::{receiving::Label, sending::SilentPaymentAddress};
 
 use anyhow::{Error, Result};
 
-use crate::db::FileWriter;
-use crate::{
-    constants::{
-        DUST_THRESHOLD, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE,
-        PSBT_SP_TWEAK_KEY,
-    },
-    stream::send_amount_update,
+use crate::constants::{
+    DUST_THRESHOLD, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE, PSBT_SP_TWEAK_KEY,
 };
+use crate::db::FileWriter;
 
 pub use bitcoin::psbt::Psbt;
-
-pub struct ScanProgress {
-    pub start: u32,
-    pub current: u32,
-    pub end: u32,
-}
 
 type SpendingTxId = String;
 type MinedInBlock = String;
@@ -200,8 +190,6 @@ impl SpClient {
         for input in tx.input {
             self.mark_outpoint_spent(input.previous_output, txid)?;
         }
-
-        send_amount_update(self.get_spendable_amt());
 
         self.save_to_disk()
     }
@@ -715,7 +703,7 @@ impl SpClient {
         Ok(signed_psbt)
     }
 
-    pub(crate) fn finalize_psbt(psbt: &mut Psbt) -> Result<()> {
+    pub fn finalize_psbt(psbt: &mut Psbt) -> Result<()> {
         psbt.inputs.iter_mut().for_each(|i| {
             let mut script_witness = Witness::new();
             if let Some(sig) = i.tap_key_sig {
