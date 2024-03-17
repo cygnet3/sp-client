@@ -30,9 +30,9 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 
-use silentpayments::sending::SilentPaymentAddress;
+use silentpayments::receiving::Receiver;
 use silentpayments::utils as sp_utils;
-use silentpayments::{receiving::Receiver, utils::LabelHash};
+use silentpayments::{receiving::Label, sending::SilentPaymentAddress};
 
 use anyhow::{Error, Result};
 
@@ -115,7 +115,7 @@ impl SpClient {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
         let sp_receiver: Receiver;
-        let change_label = LabelHash::from_b_scan_and_m(scan_sk, 0).to_label();
+        let change_label = Label::new(scan_sk, 0);
         match spend_key {
             SpendKey::Public(key) => {
                 sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), is_testnet)?;
@@ -281,7 +281,7 @@ impl SpClient {
             SpendKey::Public(_) => return Err(Error::msg("Watch-only wallet, can't spend")),
         };
 
-        let mut input_privkeys: Vec<SecretKey> = vec![];
+        let mut input_privkeys: Vec<(SecretKey, bool)> = vec![];
         for (i, input) in psbt.inputs.iter().enumerate() {
             if let Some(tweak) = input.proprietary.get(&raw::ProprietaryKey {
                 prefix: PSBT_SP_PREFIX.as_bytes().to_vec(),
@@ -294,14 +294,14 @@ impl SpClient {
                 }
                 buffer.copy_from_slice(tweak.as_slice());
                 let scalar = Scalar::from_be_bytes(buffer)?;
-                input_privkeys.push(b_spend.add_tweak(&scalar)?);
+                // because we are sp-only, all input keys are taproot
+                input_privkeys.push((b_spend.add_tweak(&scalar)?, true));
             } else {
                 // For now all inputs belong to us
                 return Err(Error::msg(format!("Missing tweak at input {}", i)));
             }
         }
 
-        let a_sum = Self::get_a_sum_secret_keys(&input_privkeys);
         let outpoints: Vec<(String, u32)> = psbt
             .unsigned_tx
             .input
@@ -311,10 +311,9 @@ impl SpClient {
                 (prev_out.txid.to_string(), prev_out.vout)
             })
             .collect();
-        let outpoints_hash: Scalar =
-            sp_utils::hash_outpoints(&outpoints, a_sum.public_key(&Secp256k1::signing_only()))?;
+
         let partial_secret =
-            sp_utils::sending::sender_calculate_partial_secret(a_sum, outpoints_hash)?;
+            sp_utils::sending::calculate_partial_secret(&input_privkeys, &outpoints)?;
 
         // get all the silent addresses
         let mut sp_addresses: Vec<String> = Vec::with_capacity(psbt.outputs.len());
@@ -616,30 +615,6 @@ impl SpClient {
         }
 
         Ok(psbt)
-    }
-
-    pub fn get_a_sum_secret_keys(input: &Vec<SecretKey>) -> SecretKey {
-        let secp = Secp256k1::new();
-
-        let mut negated_keys: Vec<SecretKey> = vec![];
-
-        for key in input {
-            let (_, parity) = key.x_only_public_key(&secp);
-
-            if parity == bitcoin::secp256k1::Parity::Odd {
-                negated_keys.push(key.negate());
-            } else {
-                negated_keys.push(*key);
-            }
-        }
-
-        let (head, tail) = negated_keys.split_first().unwrap();
-
-        let result: SecretKey = tail
-            .iter()
-            .fold(*head, |acc, &item| acc.add_tweak(&item.into()).unwrap());
-
-        result
     }
 
     fn taproot_sighash<
