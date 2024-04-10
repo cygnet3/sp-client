@@ -1,10 +1,10 @@
 [package]
-name = "sp_backend"
+name = "sp_client"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "sp_backend"
+name = "sp_client"
 crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
