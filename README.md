@@ -5,3 +5,5 @@ It builds on top of [rust-silentpayments](https://github.com/cygnet3/rust-silent
 
 Whereas rust-silentpayments concerns itself with cryptography (it is essentially a wrapper around secp256k1 for some silent payments logic),
 sp-client is concerned with high-level wallet stuff, such as parsing incoming transactions, managing owned outputs, and signing transactions.
+
+This library is used as a backend for the silent payment wallet [Donation wallet](https://github.com/cygnet3/donationwallet).
