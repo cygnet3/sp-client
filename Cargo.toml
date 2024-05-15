@@ -9,7 +9,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
 nakamoto = { git = "https://github.com/cygnet3/nakamoto", branch = "master" }
-silentpayments = "0.1"
+silentpayments = "0.2"
 anyhow = "1.0"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"

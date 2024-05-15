@@ -106,19 +106,20 @@ impl SpClient {
         let scan_pubkey = scan_sk.public_key(&secp);
         let sp_receiver: Receiver;
         let change_label = Label::new(scan_sk, 0);
+
+        let network = match is_testnet {
+            true => silentpayments::Network::Testnet,
+            false => silentpayments::Network::Mainnet,
+        };
+
         match spend_key {
             SpendKey::Public(key) => {
-                sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), is_testnet)?;
+                sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), network)?;
             }
             SpendKey::Secret(key) => {
                 let spend_pubkey = key.public_key(&secp);
-                sp_receiver = Receiver::new(
-                    0,
-                    scan_pubkey,
-                    spend_pubkey,
-                    change_label.into(),
-                    is_testnet,
-                )?;
+                sp_receiver =
+                    Receiver::new(0, scan_pubkey, spend_pubkey, change_label.into(), network)?;
             }
         }
         let writer = FileWriter::new(path, label.clone())?;
@@ -488,7 +489,7 @@ impl SpClient {
 
                 match SilentPaymentAddress::try_from(o.address.as_str()) {
                     Ok(sp_address) => {
-                        if self.sp_receiver.is_testnet != sp_address.is_testnet() {
+                        if self.sp_receiver.network != silentpayments::Network::Testnet {
                             return Err(Error::msg(format!(
                                 "Wrong network for address {}",
                                 sp_address
@@ -500,12 +501,23 @@ impl SpClient {
                     Err(_) => {
                         let unchecked_address = Address::from_str(&o.address)?; // TODO: handle better garbage string
 
-                        let address_is_testnet = match *unchecked_address.network() {
-                            Network::Bitcoin => false,
-                            _ => true,
+                        let correct_network = match *unchecked_address.network() {
+                            Network::Bitcoin => {
+                                self.sp_receiver.network == silentpayments::Network::Mainnet
+                            }
+                            Network::Testnet => {
+                                self.sp_receiver.network == silentpayments::Network::Testnet
+                            }
+                            Network::Signet => {
+                                self.sp_receiver.network == silentpayments::Network::Testnet
+                            }
+                            Network::Regtest => {
+                                self.sp_receiver.network == silentpayments::Network::Regtest
+                            }
+                            _ => false,
                         };
 
-                        if self.sp_receiver.is_testnet != address_is_testnet {
+                        if !correct_network {
                             return Err(Error::msg(format!(
                                 "Wrong network for address {}",
                                 unchecked_address.assume_checked()
