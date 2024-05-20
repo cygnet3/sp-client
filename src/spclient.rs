@@ -8,7 +8,6 @@ use bip39::{
     Mnemonic,
 };
 
-use bitcoin::psbt::{raw, Input, Output};
 use bitcoin::{
     bip32::{DerivationPath, Xpriv},
     consensus::{deserialize, serialize},
@@ -21,10 +20,13 @@ use bitcoin::{
     },
     sighash::{Prevouts, SighashCache},
     taproot::Signature,
-    Address, Amount, BlockHash, Network, ScriptBuf, TapLeafHash, Transaction, TxIn, TxOut, Witness,
+    Address, Amount, BlockHash, Network, ScriptBuf, TapLeafHash, TxIn, TxOut, Witness,
+};
+use bitcoin::{
+    psbt::{raw, Input, Output},
+    OutPoint, Transaction, Txid,
 };
 use log::info;
-use nakamoto::common::bitcoin::{OutPoint, Txid};
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -181,10 +183,7 @@ impl SpClient {
         self.owned.contains_key(&outpoint)
     }
 
-    pub fn mark_transaction_inputs_as_spent(
-        &mut self,
-        tx: nakamoto::chain::Transaction,
-    ) -> Result<()> {
+    pub fn mark_transaction_inputs_as_spent(&mut self, tx: Transaction) -> Result<()> {
         let txid = tx.txid();
 
         // note: this currently fails for collaborative transactions
@@ -562,7 +561,7 @@ impl SpClient {
             });
         }
 
-        let tx = bitcoin::Transaction {
+        let tx = Transaction {
             version: bitcoin::transaction::Version(2),
             lock_time: bitcoin::absolute::LockTime::ZERO,
             input: tx_in,
