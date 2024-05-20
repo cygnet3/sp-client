@@ -24,6 +24,7 @@ use bitcoin::{
 };
 use bitcoin::{
     psbt::{raw, Input, Output},
+    secp256k1::All,
     OutPoint, Transaction, Txid,
 };
 use log::info;
@@ -734,6 +735,31 @@ impl SpClient {
             i.bip32_derivation = BTreeMap::new();
         });
         Ok(())
+    }
+
+    pub fn get_script_to_secret_map(
+        &self,
+        tweak_data_vec: Vec<PublicKey>,
+        secp: &Secp256k1<All>,
+    ) -> Result<HashMap<[u8; 34], PublicKey>> {
+        let scan_key_scalar: Scalar = self.scan_sk.into();
+
+        let mut res = HashMap::new();
+        let shared_secrets: Result<Vec<PublicKey>> = tweak_data_vec
+            .into_iter()
+            .map(|tweak| tweak.mul_tweak(secp, &scan_key_scalar).map_err(Error::new))
+            .collect();
+
+        for shared_secret in shared_secrets? {
+            let spks = self
+                .sp_receiver
+                .get_spks_from_shared_secret(&shared_secret)?;
+
+            for spk in spks.into_values() {
+                res.insert(spk, shared_secret);
+            }
+        }
+        Ok(res)
     }
 }
 
