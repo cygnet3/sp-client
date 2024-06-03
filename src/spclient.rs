@@ -33,9 +33,9 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 
-use silentpayments::receiving::Receiver;
+use silentpayments::receiving::Label;
 use silentpayments::utils as sp_utils;
-use silentpayments::{receiving::Label, sending::SilentPaymentAddress};
+use silentpayments::{receiving::Receiver, utils::SilentPaymentAddress};
 
 use anyhow::{Error, Result};
 
@@ -111,8 +111,8 @@ impl SpClient {
         let change_label = Label::new(scan_sk, 0);
 
         let network = match is_testnet {
-            true => silentpayments::Network::Testnet,
-            false => silentpayments::Network::Mainnet,
+            true => silentpayments::utils::Network::Testnet,
+            false => silentpayments::utils::Network::Mainnet,
         };
 
         match spend_key {
@@ -489,7 +489,7 @@ impl SpClient {
 
                 match SilentPaymentAddress::try_from(o.address.as_str()) {
                     Ok(sp_address) => {
-                        if self.sp_receiver.network != silentpayments::Network::Testnet {
+                        if self.sp_receiver.network != silentpayments::utils::Network::Testnet {
                             return Err(Error::msg(format!(
                                 "Wrong network for address {}",
                                 sp_address
@@ -503,16 +503,16 @@ impl SpClient {
 
                         let correct_network = match *unchecked_address.network() {
                             Network::Bitcoin => {
-                                self.sp_receiver.network == silentpayments::Network::Mainnet
+                                self.sp_receiver.network == silentpayments::utils::Network::Mainnet
                             }
                             Network::Testnet => {
-                                self.sp_receiver.network == silentpayments::Network::Testnet
+                                self.sp_receiver.network == silentpayments::utils::Network::Testnet
                             }
                             Network::Signet => {
-                                self.sp_receiver.network == silentpayments::Network::Testnet
+                                self.sp_receiver.network == silentpayments::utils::Network::Testnet
                             }
                             Network::Regtest => {
-                                self.sp_receiver.network == silentpayments::Network::Regtest
+                                self.sp_receiver.network == silentpayments::utils::Network::Regtest
                             }
                             _ => false,
                         };
