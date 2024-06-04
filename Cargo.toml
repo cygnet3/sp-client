@@ -16,3 +16,4 @@ bitcoin = { version = "0.31.1", features = ["serde", "rand", "base64"] }
 bip39 = { version = "2.0.0", features = ["rand"] }
 serde_with = "3.6.0"
 log = "0.4.20"
+rayon = "1.10.0"
