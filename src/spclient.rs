@@ -742,21 +742,29 @@ impl SpClient {
         tweak_data_vec: Vec<PublicKey>,
         secp: &Secp256k1<All>,
     ) -> Result<HashMap<[u8; 34], PublicKey>> {
+        use rayon::prelude::*;
         let scan_key_scalar: Scalar = self.scan_sk.into();
 
-        let mut res = HashMap::new();
         let shared_secrets: Result<Vec<PublicKey>> = tweak_data_vec
-            .into_iter()
+            .into_par_iter()
             .map(|tweak| tweak.mul_tweak(secp, &scan_key_scalar).map_err(Error::new))
             .collect();
 
-        for shared_secret in shared_secrets? {
-            let spks = self
-                .sp_receiver
-                .get_spks_from_shared_secret(&shared_secret)?;
+        let shared_secrets = shared_secrets?;
 
-            for spk in spks.into_values() {
-                res.insert(spk, shared_secret);
+        let items: Result<Vec<_>> = shared_secrets
+            .into_par_iter()
+            .map(|secret| {
+                let spks = self.sp_receiver.get_spks_from_shared_secret(&secret)?;
+
+                Ok((secret, spks.into_values()))
+            })
+            .collect();
+
+        let mut res = HashMap::new();
+        for (secret, spks) in items? {
+            for spk in spks {
+                res.insert(spk, secret);
             }
         }
         Ok(res)
