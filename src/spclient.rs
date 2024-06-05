@@ -42,7 +42,6 @@ use anyhow::{Error, Result};
 use crate::constants::{
     DUST_THRESHOLD, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE, PSBT_SP_TWEAK_KEY,
 };
-use crate::db::FileWriter;
 
 pub use bitcoin::psbt::Psbt;
 
@@ -92,7 +91,6 @@ pub struct SpClient {
     pub last_scan: u32,
     #[serde_as(as = "HashMap<DisplayFromStr, _>")]
     owned: HashMap<OutPoint, OwnedOutput>,
-    writer: FileWriter,
 }
 
 impl SpClient {
@@ -125,7 +123,6 @@ impl SpClient {
                     Receiver::new(0, scan_pubkey, spend_pubkey, change_label.into(), network)?;
             }
         }
-        let writer = FileWriter::new(path, label.clone())?;
 
         Ok(Self {
             label,
@@ -136,22 +133,7 @@ impl SpClient {
             birthday,
             last_scan: if birthday == 0 { 0 } else { birthday - 1 },
             owned: HashMap::new(),
-            writer,
         })
-    }
-
-    pub fn try_init_from_disk(label: String, path: String) -> Result<SpClient> {
-        let empty = SpClient::new(
-            label,
-            SecretKey::from_slice(&[1u8; SECRET_KEY_SIZE]).unwrap(),
-            SpendKey::Secret(SecretKey::from_slice(&[1u8; SECRET_KEY_SIZE]).unwrap()),
-            None,
-            0,
-            false,
-            path,
-        )?;
-
-        empty.retrieve_from_disk()
     }
 
     pub fn update_last_scan(&mut self, scan_height: u32) {
@@ -192,7 +174,7 @@ impl SpClient {
             self.mark_outpoint_spent(input.previous_output, txid)?;
         }
 
-        self.save_to_disk()
+        Ok(())
     }
 
     pub fn mark_outpoint_spent(&mut self, outpoint: OutPoint, txid: Txid) -> Result<()> {
@@ -242,18 +224,6 @@ impl SpClient {
         new.last_scan = blockheight;
 
         new
-    }
-
-    pub fn save_to_disk(&self) -> Result<()> {
-        self.writer.write_to_file(self)
-    }
-
-    pub fn retrieve_from_disk(self) -> Result<Self> {
-        self.writer.read_from_file()
-    }
-
-    pub fn delete_from_disk(self) -> Result<()> {
-        self.writer.delete()
     }
 
     pub fn get_receiving_address(&self) -> String {
