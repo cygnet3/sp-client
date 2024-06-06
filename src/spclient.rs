@@ -489,7 +489,7 @@ impl SpClient {
 
                 match SilentPaymentAddress::try_from(o.address.as_str()) {
                     Ok(sp_address) => {
-                        if self.sp_receiver.network != silentpayments::utils::Network::Testnet {
+                        if sp_address.get_network() != self.sp_receiver.network {
                             return Err(Error::msg(format!(
                                 "Wrong network for address {}",
                                 sp_address
