@@ -14,8 +14,8 @@ use bitcoin::{
     secp256k1::{Keypair, Message, PublicKey, Scalar, Secp256k1, SecretKey, ThirtyTwoByteHash},
     sighash::{Prevouts, SighashCache},
     taproot::Signature,
-    Address, Amount, BlockHash, OutPoint, ScriptBuf, TapLeafHash, Transaction, TxIn, TxOut, Txid,
-    Witness, XOnlyPublicKey,
+    Address, Amount, BlockHash, Network, OutPoint, ScriptBuf, TapLeafHash, Transaction, TxIn,
+    TxOut, Txid, Witness, XOnlyPublicKey,
 };
 use bitcoin::{
     hashes::Hash,
@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use silentpayments::receiving::{Label, Receiver};
 use silentpayments::utils as sp_utils;
-use silentpayments::utils::{Network, SilentPaymentAddress};
+use silentpayments::utils::{Network as SpNetwork, SilentPaymentAddress};
 
 use anyhow::{Error, Result};
 
@@ -278,7 +278,7 @@ impl Default for SpClient {
                 default_pubkey,
                 default_pubkey,
                 Scalar::from_be_bytes(ONE).unwrap().into(),
-                Network::Regtest,
+                SpNetwork::Regtest,
             )
             .unwrap(),
         }
@@ -291,25 +291,32 @@ impl SpClient {
         scan_sk: SecretKey,
         spend_key: SpendKey,
         mnemonic: Option<String>,
-        is_testnet: bool,
+        network: Network,
     ) -> Result<Self> {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
         let sp_receiver: Receiver;
         let change_label = Label::new(scan_sk, 0);
-        let network = if is_testnet {
-            Network::Testnet
-        } else {
-            Network::Mainnet
+
+        let sp_network = match network {
+            Network::Bitcoin => SpNetwork::Mainnet,
+            Network::Regtest => SpNetwork::Regtest,
+            Network::Testnet | Network::Signet => SpNetwork::Testnet,
+            _ => unreachable!(),
         };
         match spend_key {
             SpendKey::Public(key) => {
-                sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), network)?;
+                sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), sp_network)?;
             }
             SpendKey::Secret(key) => {
                 let spend_pubkey = key.public_key(&secp);
-                sp_receiver =
-                    Receiver::new(0, scan_pubkey, spend_pubkey, change_label.into(), network)?;
+                sp_receiver = Receiver::new(
+                    0,
+                    scan_pubkey,
+                    spend_pubkey,
+                    change_label.into(),
+                    sp_network,
+                )?;
             }
         }
 
@@ -596,12 +603,14 @@ impl SpClient {
                     Err(_) => {
                         let unchecked_address = Address::from_str(&o.address)?; // TODO: handle better garbage string
 
-                        let address_is_testnet = match *unchecked_address.network() {
-                            bitcoin::Network::Bitcoin => false,
-                            _ => true,
+                        let address_sp_network = match *unchecked_address.network() {
+                            Network::Bitcoin => SpNetwork::Mainnet,
+                            Network::Testnet | Network::Signet => SpNetwork::Testnet,
+                            Network::Regtest => SpNetwork::Regtest,
+                            _ => unreachable!(),
                         };
 
-                        if self.sp_receiver.network == Network::Mainnet && address_is_testnet {
+                        if self.sp_receiver.network != address_sp_network {
                             return Err(Error::msg(format!(
                                 "Wrong network for address {}",
                                 unchecked_address.assume_checked()
@@ -1010,13 +1019,7 @@ impl SpWallet {
     }
 }
 
-pub fn derive_keys_from_seed(seed: &[u8; 64], is_testnet: bool) -> Result<(SecretKey, SecretKey)> {
-    let network = if is_testnet {
-        bitcoin::Network::Testnet
-    } else {
-        bitcoin::Network::Bitcoin
-    };
-
+pub fn derive_keys_from_seed(seed: &[u8; 64], network: Network) -> Result<(SecretKey, SecretKey)> {
     let xprv = Xpriv::new_master(network, seed)?;
 
     let (scan_privkey, spend_privkey) = derive_keys_from_xprv(xprv)?;
