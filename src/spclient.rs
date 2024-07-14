@@ -131,18 +131,13 @@ impl OutputList {
         self.last_scan = scan_height;
     }
 
-    pub fn reset_to_height(&mut self, height: u32) {
+    fn reset_to_height(&mut self, height: u32) {
         let new_outputs = self
             .to_outpoints_list()
             .into_iter()
             .filter(|(_, o)| o.blockheight < height)
             .collect::<HashMap<OutPoint, OwnedOutput>>();
         self.outputs = new_outputs;
-    }
-
-    pub fn reset_to_birthday(&mut self) {
-        self.reset_to_height(self.birthday);
-        self.update_last_scan(self.birthday);
     }
 
     pub fn to_outpoints_list(&self) -> HashMap<OutPoint, OwnedOutput> {
@@ -1074,6 +1069,25 @@ impl SpWallet {
                 amount,
                 confirmed_at: Some(confirmed_at),
             }))
+    }
+
+    pub fn reset_to_height(&mut self, blkheight: u32) {
+        // reset known outputs to height
+        self.outputs.reset_to_height(blkheight);
+
+        self.tx_history.retain(|tx| match tx {
+            RecordedTransaction::Incoming(incoming) => incoming
+                .confirmed_at
+                .is_some_and(|x| x.to_consensus_u32() < blkheight),
+            RecordedTransaction::Outgoing(_) => true,
+        });
+    }
+
+    pub fn reset_to_birthday(&mut self) {
+        self.reset_to_height(self.outputs.birthday);
+
+        self.outputs.update_last_scan(self.outputs.birthday);
+
     }
 }
 
