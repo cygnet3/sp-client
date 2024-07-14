@@ -5,6 +5,7 @@ use std::{
 };
 
 use bitcoin::{
+    absolute::Height,
     bip32::{DerivationPath, Xpriv},
     consensus::{deserialize, serialize},
     hex::DisplayHex,
@@ -38,6 +39,26 @@ pub use bitcoin::psbt::Psbt;
 
 type SpendingTxId = String;
 type MinedInBlock = String;
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum RecordedTransaction {
+    Incoming(RecordedTransactionIncoming),
+    Outgoing(RecordedTransactionOutgoing),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct RecordedTransactionIncoming {
+    pub txid: Txid,
+    pub amount: Amount,
+    pub confirmed_at: Option<Height>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct RecordedTransactionOutgoing {
+    pub txid: Txid,
+    pub recipients: Vec<Recipient>,
+    pub confirmed_at: Option<Height>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum OutputSpendStatus {
@@ -884,15 +905,21 @@ impl SpClient {
 pub struct SpWallet {
     client: SpClient,
     outputs: OutputList,
+    tx_history: Vec<RecordedTransaction>,
 }
 
 impl SpWallet {
-    pub fn new(client: SpClient, outputs: Option<OutputList>) -> Result<Self> {
+    pub fn new(
+        client: SpClient,
+        outputs: Option<OutputList>,
+        tx_history: Vec<RecordedTransaction>,
+    ) -> Result<Self> {
         if let Some(existing_outputs) = outputs {
             if existing_outputs.check_fingerprint(&client) {
                 Ok(Self {
                     client,
                     outputs: existing_outputs,
+                    tx_history,
                 })
             } else {
                 Err(Error::msg("outputs don't match client"))
@@ -904,7 +931,11 @@ impl SpWallet {
                 client.get_spend_key().into(),
                 0,
             );
-            Ok(Self { client, outputs })
+            Ok(Self {
+                client,
+                outputs,
+                tx_history,
+            })
         }
     }
 
@@ -914,6 +945,10 @@ impl SpWallet {
 
     pub fn get_outputs(&self) -> &OutputList {
         &self.outputs
+    }
+
+    pub fn get_tx_history(&self) -> Vec<RecordedTransaction> {
+        self.tx_history.clone()
     }
 
     pub fn get_mut_client(&mut self) -> &mut SpClient {
@@ -1016,6 +1051,29 @@ impl SpWallet {
         }
 
         Ok(res)
+    }
+
+    pub fn record_outgoing_transaction(&mut self, txid: Txid, recipients: Vec<Recipient>) {
+        self.tx_history
+            .push(RecordedTransaction::Outgoing(RecordedTransactionOutgoing {
+                txid,
+                recipients,
+                confirmed_at: None,
+            }))
+    }
+
+    pub fn record_incoming_transaction(
+        &mut self,
+        txid: Txid,
+        amount: Amount,
+        confirmed_at: Height,
+    ) {
+        self.tx_history
+            .push(RecordedTransaction::Incoming(RecordedTransactionIncoming {
+                txid,
+                amount,
+                confirmed_at: Some(confirmed_at),
+            }))
     }
 }
 
