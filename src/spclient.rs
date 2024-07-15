@@ -1057,6 +1057,24 @@ impl SpWallet {
             }))
     }
 
+    pub fn confirm_recorded_outgoing_transaction(
+        &mut self,
+        txid: Txid,
+        blkheight: Height,
+    ) -> Result<()> {
+        for recorded_tx in self.tx_history.iter_mut() {
+            match recorded_tx {
+                RecordedTransaction::Outgoing(outgoing) if (outgoing.txid == txid) => {
+                    outgoing.confirmed_at = Some(blkheight);
+                    return Ok(());
+                }
+                _ => (),
+            }
+        }
+
+        Err(Error::msg(format!("No outgoing tx found: {}", txid)))
+    }
+
     pub fn record_incoming_transaction(
         &mut self,
         txid: Txid,
@@ -1071,15 +1089,18 @@ impl SpWallet {
             }))
     }
 
-    pub fn reset_to_height(&mut self, blkheight: u32) {
+    fn reset_to_height(&mut self, blkheight: u32) {
         // reset known outputs to height
         self.outputs.reset_to_height(blkheight);
 
+        // reset tx history to height
         self.tx_history.retain(|tx| match tx {
             RecordedTransaction::Incoming(incoming) => incoming
                 .confirmed_at
                 .is_some_and(|x| x.to_consensus_u32() < blkheight),
-            RecordedTransaction::Outgoing(_) => true,
+            RecordedTransaction::Outgoing(outgoing) => outgoing
+                .confirmed_at
+                .is_some_and(|x| x.to_consensus_u32() < blkheight),
         });
     }
 
@@ -1087,7 +1108,45 @@ impl SpWallet {
         self.reset_to_height(self.outputs.birthday);
 
         self.outputs.update_last_scan(self.outputs.birthday);
+    }
 
+    pub fn record_block_outputs(
+        &mut self,
+        height: Height,
+        found_outputs: HashMap<OutPoint, OwnedOutput>,
+    ) {
+        // add outputs to history
+        let mut txs: HashMap<Txid, Amount> = HashMap::new();
+        for (outpoint, output) in found_outputs.iter() {
+            let entry = txs.entry(outpoint.txid).or_default();
+            *entry += output.amount;
+        }
+        for (txid, amount) in txs {
+            self.tx_history
+                .push(RecordedTransaction::Incoming(RecordedTransactionIncoming {
+                    txid,
+                    amount,
+                    confirmed_at: Some(height),
+                }))
+        }
+
+        // add outputs to known outputs
+        self.outputs.extend_from(found_outputs);
+    }
+
+    pub fn record_block_inputs(
+        &mut self,
+        blkheight: Height,
+        blkhash: BlockHash,
+        found_inputs: Vec<OutPoint>,
+    ) -> Result<()> {
+        for outpoint in found_inputs {
+            // this may confirm the same tx multiple times, but this shouldn't be a problem
+            self.confirm_recorded_outgoing_transaction(outpoint.txid, blkheight)?;
+            self.outputs.mark_mined(outpoint, blkhash)?;
+        }
+
+        Ok(())
     }
 }
 
