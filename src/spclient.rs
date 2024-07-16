@@ -276,6 +276,7 @@ pub struct SpClient {
     spend_key: SpendKey,
     mnemonic: Option<String>,
     pub sp_receiver: Receiver,
+    network: Network,
 }
 
 impl Default for SpClient {
@@ -297,6 +298,7 @@ impl Default for SpClient {
                 SpNetwork::Regtest,
             )
             .unwrap(),
+            network: Network::Regtest,
         }
     }
 }
@@ -342,6 +344,7 @@ impl SpClient {
             spend_key,
             mnemonic,
             sp_receiver,
+            network,
         })
     }
 
@@ -359,6 +362,10 @@ impl SpClient {
 
     pub fn get_mnemonic(&self) -> Option<String> {
         self.mnemonic.clone()
+    }
+
+    pub fn get_network(&self) -> Network {
+        self.network
     }
 
     pub fn try_get_secret_spend_key(&self) -> Result<SecretKey> {
