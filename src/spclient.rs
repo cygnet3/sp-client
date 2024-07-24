@@ -5,7 +5,6 @@ use std::{
 };
 
 use bitcoin::{
-    absolute::Height,
     bip32::{DerivationPath, Xpriv},
     consensus::{deserialize, serialize},
     hex::DisplayHex,
@@ -39,26 +38,6 @@ pub use bitcoin::psbt::Psbt;
 
 type SpendingTxId = String;
 type MinedInBlock = String;
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub enum RecordedTransaction {
-    Incoming(RecordedTransactionIncoming),
-    Outgoing(RecordedTransactionOutgoing),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct RecordedTransactionIncoming {
-    pub txid: Txid,
-    pub amount: Amount,
-    pub confirmed_at: Option<Height>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct RecordedTransactionOutgoing {
-    pub txid: Txid,
-    pub recipients: Vec<Recipient>,
-    pub confirmed_at: Option<Height>,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum OutputSpendStatus {
@@ -907,21 +886,15 @@ impl SpClient {
 pub struct SpWallet {
     client: SpClient,
     outputs: OutputList,
-    tx_history: Vec<RecordedTransaction>,
 }
 
 impl SpWallet {
-    pub fn new(
-        client: SpClient,
-        outputs: Option<OutputList>,
-        tx_history: Vec<RecordedTransaction>,
-    ) -> Result<Self> {
+    pub fn new(client: SpClient, outputs: Option<OutputList>) -> Result<Self> {
         if let Some(existing_outputs) = outputs {
             if existing_outputs.check_fingerprint(&client) {
                 Ok(Self {
                     client,
                     outputs: existing_outputs,
-                    tx_history,
                 })
             } else {
                 Err(Error::msg("outputs don't match client"))
@@ -933,11 +906,7 @@ impl SpWallet {
                 client.get_spend_key().into(),
                 0,
             );
-            Ok(Self {
-                client,
-                outputs,
-                tx_history,
-            })
+            Ok(Self { client, outputs })
         }
     }
 
@@ -947,10 +916,6 @@ impl SpWallet {
 
     pub fn get_outputs(&self) -> &OutputList {
         &self.outputs
-    }
-
-    pub fn get_tx_history(&self) -> Vec<RecordedTransaction> {
-        self.tx_history.clone()
     }
 
     pub fn get_mut_client(&mut self) -> &mut SpClient {
@@ -1055,101 +1020,25 @@ impl SpWallet {
         Ok(res)
     }
 
-    pub fn record_outgoing_transaction(&mut self, txid: Txid, recipients: Vec<Recipient>) {
-        self.tx_history
-            .push(RecordedTransaction::Outgoing(RecordedTransactionOutgoing {
-                txid,
-                recipients,
-                confirmed_at: None,
-            }))
-    }
-
-    pub fn confirm_recorded_outgoing_transaction(
-        &mut self,
-        txid: Txid,
-        blkheight: Height,
-    ) -> Result<()> {
-        for recorded_tx in self.tx_history.iter_mut() {
-            match recorded_tx {
-                RecordedTransaction::Outgoing(outgoing) if (outgoing.txid == txid) => {
-                    outgoing.confirmed_at = Some(blkheight);
-                    return Ok(());
-                }
-                _ => (),
-            }
-        }
-
-        Err(Error::msg(format!("No outgoing tx found: {}", txid)))
-    }
-
-    pub fn record_incoming_transaction(
-        &mut self,
-        txid: Txid,
-        amount: Amount,
-        confirmed_at: Height,
-    ) {
-        self.tx_history
-            .push(RecordedTransaction::Incoming(RecordedTransactionIncoming {
-                txid,
-                amount,
-                confirmed_at: Some(confirmed_at),
-            }))
-    }
-
-    fn reset_to_height(&mut self, blkheight: u32) {
-        // reset known outputs to height
-        self.outputs.reset_to_height(blkheight);
-
-        // reset tx history to height
-        self.tx_history.retain(|tx| match tx {
-            RecordedTransaction::Incoming(incoming) => incoming
-                .confirmed_at
-                .is_some_and(|x| x.to_consensus_u32() < blkheight),
-            RecordedTransaction::Outgoing(outgoing) => outgoing
-                .confirmed_at
-                .is_some_and(|x| x.to_consensus_u32() < blkheight),
-        });
-    }
-
     pub fn reset_to_birthday(&mut self) {
-        self.reset_to_height(self.outputs.birthday);
+        // reset known outputs to height
+        self.outputs.reset_to_height(self.outputs.birthday);
 
         self.outputs.update_last_scan(self.outputs.birthday);
     }
 
-    pub fn record_block_outputs(
-        &mut self,
-        height: Height,
-        found_outputs: HashMap<OutPoint, OwnedOutput>,
-    ) {
-        // add outputs to history
-        let mut txs: HashMap<Txid, Amount> = HashMap::new();
-        for (outpoint, output) in found_outputs.iter() {
-            let entry = txs.entry(outpoint.txid).or_default();
-            *entry += output.amount;
-        }
-        for (txid, amount) in txs {
-            self.tx_history
-                .push(RecordedTransaction::Incoming(RecordedTransactionIncoming {
-                    txid,
-                    amount,
-                    confirmed_at: Some(height),
-                }))
-        }
-
+    pub fn record_block_outputs(&mut self, found_outputs: HashMap<OutPoint, OwnedOutput>) {
         // add outputs to known outputs
         self.outputs.extend_from(found_outputs);
     }
 
     pub fn record_block_inputs(
         &mut self,
-        blkheight: Height,
         blkhash: BlockHash,
         found_inputs: Vec<OutPoint>,
     ) -> Result<()> {
         for outpoint in found_inputs {
             // this may confirm the same tx multiple times, but this shouldn't be a problem
-            self.confirm_recorded_outgoing_transaction(outpoint.txid, blkheight)?;
             self.outputs.mark_mined(outpoint, blkhash)?;
         }
 
