@@ -56,6 +56,7 @@ pub struct RecordedTransactionIncoming {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct RecordedTransactionOutgoing {
     pub txid: Txid,
+    pub spent_outpoints: Vec<OutPoint>,
     pub recipients: Vec<Recipient>,
     pub confirmed_at: Option<Height>,
 }
@@ -1055,10 +1056,16 @@ impl SpWallet {
         Ok(res)
     }
 
-    pub fn record_outgoing_transaction(&mut self, txid: Txid, recipients: Vec<Recipient>) {
+    pub fn record_outgoing_transaction(
+        &mut self,
+        txid: Txid,
+        spent_outpoints: Vec<OutPoint>,
+        recipients: Vec<Recipient>,
+    ) {
         self.tx_history
             .push(RecordedTransaction::Outgoing(RecordedTransactionOutgoing {
                 txid,
+                spent_outpoints,
                 recipients,
                 confirmed_at: None,
             }))
@@ -1066,12 +1073,14 @@ impl SpWallet {
 
     pub fn confirm_recorded_outgoing_transaction(
         &mut self,
-        txid: Txid,
+        outpoint: OutPoint,
         blkheight: Height,
     ) -> Result<()> {
         for recorded_tx in self.tx_history.iter_mut() {
             match recorded_tx {
-                RecordedTransaction::Outgoing(outgoing) if (outgoing.txid == txid) => {
+                RecordedTransaction::Outgoing(outgoing)
+                    if (outgoing.spent_outpoints.contains(&outpoint)) =>
+                {
                     outgoing.confirmed_at = Some(blkheight);
                     return Ok(());
                 }
@@ -1079,7 +1088,10 @@ impl SpWallet {
             }
         }
 
-        Err(Error::msg(format!("No outgoing tx found: {}", txid)))
+        Err(Error::msg(format!(
+            "No outgoing tx found for input: {}",
+            outpoint
+        )))
     }
 
     pub fn record_incoming_transaction(
@@ -1149,7 +1161,7 @@ impl SpWallet {
     ) -> Result<()> {
         for outpoint in found_inputs {
             // this may confirm the same tx multiple times, but this shouldn't be a problem
-            self.confirm_recorded_outgoing_transaction(outpoint.txid, blkheight)?;
+            self.confirm_recorded_outgoing_transaction(outpoint, blkheight)?;
             self.outputs.mark_mined(outpoint, blkhash)?;
         }
 
