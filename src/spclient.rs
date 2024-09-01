@@ -1071,27 +1071,25 @@ impl SpWallet {
             }))
     }
 
-    pub fn confirm_recorded_outgoing_transaction(
-        &mut self,
-        outpoint: OutPoint,
-        blkheight: Height,
-    ) -> Result<()> {
+    pub fn confirm_recorded_outgoing_transaction(&mut self, outpoint: OutPoint, blkheight: Height) {
         for recorded_tx in self.tx_history.iter_mut() {
             match recorded_tx {
                 RecordedTransaction::Outgoing(outgoing)
                     if (outgoing.spent_outpoints.contains(&outpoint)) =>
                 {
                     outgoing.confirmed_at = Some(blkheight);
-                    return Ok(());
+                    return;
                 }
                 _ => (),
             }
         }
 
-        Err(Error::msg(format!(
-            "No outgoing tx found for input: {}",
-            outpoint
-        )))
+        // If no recorded transaction has been found, this input was likely spent by
+        // another wallet that used the same seed.
+        // In this case, we simply don't track this transaction in the tx history.
+        // This can mean that the tx history gets desynced between different wallets,
+        // but this is acceptabble behavior for a silent payment wallet.
+        log::warn!("No outgoing tx found for input: {}", outpoint);
     }
 
     pub fn record_incoming_transaction(
@@ -1161,7 +1159,7 @@ impl SpWallet {
     ) -> Result<()> {
         for outpoint in found_inputs {
             // this may confirm the same tx multiple times, but this shouldn't be a problem
-            self.confirm_recorded_outgoing_transaction(outpoint, blkheight)?;
+            self.confirm_recorded_outgoing_transaction(outpoint, blkheight);
             self.outputs.mark_mined(outpoint, blkhash)?;
         }
 
