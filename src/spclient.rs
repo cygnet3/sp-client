@@ -578,7 +578,8 @@ impl SpClient {
         utxos: HashMap<OutPoint, OwnedOutput>,
         mut recipients: Vec<Recipient>,
         payload: Option<&[u8]>,
-    ) -> Result<Psbt> {
+    ) -> Result<(Psbt, Option<usize>)> {
+        let mut change_idx = None;
         let mut tx_in: Vec<bitcoin::TxIn> = vec![];
         let mut inputs_data: Vec<(ScriptBuf, Amount, Scalar)> = vec![];
         let mut total_input_amount = Amount::from_sat(0);
@@ -672,6 +673,8 @@ impl SpClient {
             // Add change output
             let change_address = self.sp_receiver.get_change_address();
 
+            change_idx = Some(outputs.len());
+
             outputs.push(TxOut {
                 value: change_amt,
                 script_pubkey: placeholder_spk,
@@ -751,7 +754,7 @@ impl SpClient {
             }
         }
 
-        Ok(psbt)
+        Ok((psbt, change_idx))
     }
 
     fn taproot_sighash<
