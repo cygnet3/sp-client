@@ -59,6 +59,7 @@ pub struct RecordedTransactionOutgoing {
     pub spent_outpoints: Vec<OutPoint>,
     pub recipients: Vec<Recipient>,
     pub confirmed_at: Option<Height>,
+    pub change: Amount,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -1061,6 +1062,7 @@ impl SpWallet {
         txid: Txid,
         spent_outpoints: Vec<OutPoint>,
         recipients: Vec<Recipient>,
+        change: Amount,
     ) {
         self.tx_history
             .push(RecordedTransaction::Outgoing(RecordedTransactionOutgoing {
@@ -1068,6 +1070,7 @@ impl SpWallet {
                 spent_outpoints,
                 recipients,
                 confirmed_at: None,
+                change,
             }))
     }
 
