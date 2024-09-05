@@ -63,6 +63,7 @@ pub struct RecordedTransactionOutgoing {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum OutputSpendStatus {
+    Unconfirmed,
     Unspent,
     Spent(SpendingTxId),
     Mined(MinedInBlock),
@@ -183,6 +184,11 @@ impl OutputList {
         let (outpoint, mut output) = self.get_outpoint(outpoint)?;
 
         match output.spend_status {
+            OutputSpendStatus::Unconfirmed => {
+                return Err(Error::msg(
+                    "We don't allow spending unconfirmed outputs (yet)",
+                ));
+            }
             OutputSpendStatus::Unspent => {
                 let tx_hex = spending_tx.to_string();
                 output.spend_status = OutputSpendStatus::Spent(tx_hex);
