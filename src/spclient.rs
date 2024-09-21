@@ -5,6 +5,7 @@ use std::{
 };
 
 use bitcoin::{
+    absolute::Height,
     consensus::{deserialize, serialize},
     key::{constants::ONE, TapTweak},
     psbt::PsbtSighashType,
@@ -49,10 +50,10 @@ pub enum OutputSpendStatus {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct OwnedOutput {
-    pub blockheight: u32,
-    pub tweak: String,
+    pub blockheight: Height,
+    pub tweak: [u8; 32], // scalar in big endian format
     pub amount: Amount,
-    pub script: String,
+    pub script: ScriptBuf,
     pub label: Option<String>,
     pub spend_status: OutputSpendStatus,
 }
@@ -413,13 +414,13 @@ impl SpClient {
                 witness: bitcoin::Witness::new(),
             });
 
-            let scalar: Scalar = SecretKey::from_str(&utxo.tweak)?.into();
+            let scalar = Scalar::from_be_bytes(utxo.tweak)?;
 
             total_input_amount = total_input_amount
                 .checked_add(utxo.amount)
                 .ok_or(Error::msg("Overflow on input amount"))?;
 
-            inputs_data.push((ScriptBuf::from_hex(&utxo.script)?, utxo.amount, scalar));
+            inputs_data.push((utxo.script, utxo.amount, scalar));
         }
 
         // We could compute the outputs key right away,
