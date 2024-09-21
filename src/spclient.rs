@@ -94,10 +94,8 @@ impl Into<PublicKey> for SpendKey {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SpClient {
-    pub label: String,
     scan_sk: SecretKey,
     spend_key: SpendKey,
-    mnemonic: Option<String>,
     pub sp_receiver: Receiver,
     network: Network,
 }
@@ -109,10 +107,8 @@ impl Default for SpClient {
             .unwrap()
             .public_key(bitcoin::key::Parity::Even);
         Self {
-            label: "default".to_owned(),
             scan_sk: default_sk,
             spend_key: SpendKey::Secret(default_sk),
-            mnemonic: None,
             sp_receiver: Receiver::new(
                 0,
                 default_pubkey,
@@ -127,13 +123,7 @@ impl Default for SpClient {
 }
 
 impl SpClient {
-    pub fn new(
-        label: String,
-        scan_sk: SecretKey,
-        spend_key: SpendKey,
-        mnemonic: Option<String>,
-        network: Network,
-    ) -> Result<Self> {
+    pub fn new(scan_sk: SecretKey, spend_key: SpendKey, network: Network) -> Result<Self> {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
         let sp_receiver: Receiver;
@@ -162,10 +152,8 @@ impl SpClient {
         }
 
         Ok(Self {
-            label,
             scan_sk,
             spend_key,
-            mnemonic,
             sp_receiver,
             network,
         })
@@ -181,10 +169,6 @@ impl SpClient {
 
     pub fn get_spend_key(&self) -> SpendKey {
         self.spend_key.clone()
-    }
-
-    pub fn get_mnemonic(&self) -> Option<String> {
-        self.mnemonic.clone()
     }
 
     pub fn get_network(&self) -> Network {
