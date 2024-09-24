@@ -1,5 +1,10 @@
 use anyhow::Error;
-use bitcoin::{absolute::Height, key::Secp256k1, secp256k1::{PublicKey, SecretKey}, Amount, ScriptBuf};
+use bitcoin::{
+    absolute::Height,
+    key::Secp256k1,
+    secp256k1::{PublicKey, SecretKey},
+    Amount, ScriptBuf,
+};
 use serde::{Deserialize, Serialize};
 
 type SpendingTxId = String;
@@ -55,4 +60,3 @@ impl Into<PublicKey> for SpendKey {
         }
     }
 }
-

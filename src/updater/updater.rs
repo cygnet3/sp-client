@@ -6,7 +6,6 @@ use anyhow::Result;
 
 use crate::client::OwnedOutput;
 
-
 pub trait Updater {
     fn update_last_scan(&mut self, height: Height);
 
