@@ -17,3 +17,8 @@ rayon = "1.10.0"
 futures = "0.3"
 log = "0.4"
 async-trait = "0.1"
+reqwest = { version = "0.12.4", features = ["rustls-tls"], default-features = false, optional = true }
+hex = { version = "0.4.3", features = ["serde"], optional = true }
+
+[features]
+blindbit-backend = ["reqwest", "hex"]

@@ -17,7 +17,8 @@ use silentpayments::receiving::Label;
 
 use crate::{
     backend::{BlockData, ChainBackend, FilterData, UtxoData},
-    client::{OutputSpendStatus, OwnedOutput, SpClient}, updater::Updater,
+    client::{OutputSpendStatus, OwnedOutput, SpClient},
+    updater::Updater,
 };
 
 pub struct SpScanner {
