@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    sync::atomic::AtomicBool,
     time::{Duration, Instant},
 };
 
@@ -48,6 +49,7 @@ impl SpScanner {
         start: Height,
         end: Height,
         dust_limit: Amount,
+        keep_scanning: &AtomicBool,
     ) -> Result<()> {
         if start > end {
             bail!("bigger start than end: {} > {}", start, end);
@@ -61,10 +63,13 @@ impl SpScanner {
         let block_data_stream = self.backend.get_block_data_for_range(range, dust_limit);
 
         // process blocks using block data stream
-        self.process_blocks(block_data_stream).await?;
+        self.process_blocks(block_data_stream, keep_scanning)
+            .await?;
 
-        // after processing, always send update
-        self.updater.update_last_scan(end);
+        // after processing, send update
+        if keep_scanning.load(std::sync::atomic::Ordering::Relaxed) {
+            self.updater.update_last_scan(end);
+        }
 
         // time elapsed for the scan
         info!(
@@ -78,6 +83,7 @@ impl SpScanner {
     async fn process_blocks(
         &mut self,
         block_data_stream: impl Stream<Item = Result<BlockData>>,
+        keep_scanning: &AtomicBool,
     ) -> Result<()> {
         pin_mut!(block_data_stream);
 
@@ -109,6 +115,12 @@ impl SpScanner {
                 send_update = true;
                 self.updater
                     .record_block_inputs(blkheight, blkhash, found_inputs)?;
+            }
+
+            // stop scanning and return if keep_scanning is set to false
+            if !keep_scanning.load(std::sync::atomic::Ordering::Relaxed) {
+                self.updater.update_last_scan(blkheight);
+                return Ok(());
             }
 
             if send_update {
