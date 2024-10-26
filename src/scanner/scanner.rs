@@ -49,6 +49,7 @@ impl SpScanner {
         start: Height,
         end: Height,
         dust_limit: Amount,
+        with_cutthrough: bool,
         keep_scanning: &AtomicBool,
     ) -> Result<()> {
         if start > end {
@@ -60,7 +61,9 @@ impl SpScanner {
 
         // get block data stream
         let range = start.to_consensus_u32()..=end.to_consensus_u32();
-        let block_data_stream = self.backend.get_block_data_for_range(range, dust_limit);
+        let block_data_stream =
+            self.backend
+                .get_block_data_for_range(range, dust_limit, with_cutthrough);
 
         // process blocks using block data stream
         self.process_blocks(block_data_stream, keep_scanning)

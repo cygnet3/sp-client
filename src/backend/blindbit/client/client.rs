@@ -37,11 +37,15 @@ impl BlindbitClient {
         Ok(blkheight.block_height)
     }
 
-    #[allow(dead_code)]
-    pub async fn tweaks(&self, block_height: Height) -> Result<Vec<PublicKey>> {
+    pub async fn tweaks(&self, block_height: Height, dust_limit: Amount) -> Result<Vec<PublicKey>> {
         let url = self.host_url.join(&format!("tweaks/{}", block_height))?;
 
-        let res = self.client.get(url).send().await?;
+        let res = self
+            .client
+            .get(url)
+            .query(&[("dustLimit", format!("{}", dust_limit.to_sat()))])
+            .send()
+            .await?;
         Ok(serde_json::from_str(&res.text().await?)?)
     }
 
