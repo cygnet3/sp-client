@@ -34,6 +34,7 @@ impl ChainBackend for BlindbitBackend {
         &self,
         range: RangeInclusive<u32>,
         dust_limit: Amount,
+        with_cutthrough: bool,
     ) -> Pin<Box<dyn Stream<Item = Result<BlockData>> + Send>> {
         let client = Arc::new(self.client.clone());
 
@@ -43,7 +44,10 @@ impl ChainBackend for BlindbitBackend {
 
                 async move {
                     let blkheight = Height::from_consensus(n)?;
-                    let tweaks = client.tweak_index(blkheight, dust_limit).await?;
+                    let tweaks = match with_cutthrough {
+                        true => client.tweaks(blkheight, dust_limit).await?,
+                        false => client.tweak_index(blkheight, dust_limit).await?,
+                    };
                     let new_utxo_filter = client.filter_new_utxos(blkheight).await?;
                     let spent_filter = client.filter_spent(blkheight).await?;
                     let blkhash = new_utxo_filter.block_hash;

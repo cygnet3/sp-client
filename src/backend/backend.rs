@@ -13,6 +13,7 @@ pub trait ChainBackend {
         &self,
         range: RangeInclusive<u32>,
         dust_limit: Amount,
+        with_cutthrough: bool,
     ) -> Pin<Box<dyn Stream<Item = Result<BlockData>> + Send>>;
 
     async fn spent_index(&self, block_height: Height) -> Result<SpentIndexData>;
