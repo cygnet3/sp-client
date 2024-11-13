@@ -66,14 +66,8 @@ impl SpScanner {
                 .get_block_data_for_range(range, dust_limit, with_cutthrough);
 
         // process blocks using block data stream
-        self.process_blocks(block_data_stream, keep_scanning)
+        self.process_blocks(start, end, block_data_stream, keep_scanning)
             .await?;
-
-        // after processing, send update
-        if keep_scanning.load(std::sync::atomic::Ordering::Relaxed) {
-            self.updater.record_scan_height(end)?;
-            self.updater.save_to_persistent_storage()?;
-        }
 
         // time elapsed for the scan
         info!(
@@ -86,6 +80,8 @@ impl SpScanner {
 
     async fn process_blocks(
         &mut self,
+        start: Height,
+        end: Height,
         block_data_stream: impl Stream<Item = Result<BlockData>>,
         keep_scanning: &AtomicBool,
     ) -> Result<()> {
@@ -98,39 +94,39 @@ impl SpScanner {
             let blkheight = blockdata.blkheight;
             let blkhash = blockdata.blkhash;
 
-            let mut send_update = false;
+            // stop scanning and return if interrupted
+            if self.interrupt_requested() {
+                self.updater.save_to_persistent_storage()?;
+                return Ok(());
+            }
 
-            // send update after 30 seconds since last update
-            if update_time.elapsed() > Duration::from_secs(30) {
-                send_update = true;
-                update_time = Instant::now();
+            let mut save_to_storage = false;
+
+            // always save on last block or after 30 seconds since last save
+            if blkheight == end || update_time.elapsed() > Duration::from_secs(30) {
+                save_to_storage = true;
             }
 
             let (found_outputs, found_inputs) = self.process_block(blockdata).await?;
 
             if !found_outputs.is_empty() {
-                send_update = true;
+                save_to_storage = true;
                 self.updater
                     .record_block_outputs(blkheight, blkhash, found_outputs)?;
             }
 
             if !found_inputs.is_empty() {
-                send_update = true;
+                save_to_storage = true;
                 self.updater
                     .record_block_inputs(blkheight, blkhash, found_inputs)?;
             }
 
             // tell the updater we scanned this block
-            self.updater.record_scan_height(blkheight)?;
+            self.updater.record_scan_progress(start, blkheight, end)?;
 
-            // stop scanning and return if keep_scanning is set to false
-            if !keep_scanning.load(std::sync::atomic::Ordering::Relaxed) {
+            if save_to_storage {
                 self.updater.save_to_persistent_storage()?;
-                return Ok(());
-            }
-
-            if send_update {
-                self.updater.save_to_persistent_storage()?;
+                update_time = Instant::now();
             }
         }
 
