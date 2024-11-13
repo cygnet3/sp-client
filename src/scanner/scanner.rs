@@ -111,7 +111,8 @@ impl SpScanner {
 
             if !found_outputs.is_empty() {
                 send_update = true;
-                self.updater.record_block_outputs(blkheight, found_outputs);
+                self.updater
+                    .record_block_outputs(blkheight, blkhash, found_outputs);
             }
 
             if !found_inputs.is_empty() {

@@ -14,6 +14,7 @@ pub trait Updater {
     fn record_block_outputs(
         &mut self,
         height: Height,
+        blkhash: BlockHash,
         found_outputs: HashMap<OutPoint, OwnedOutput>,
     );
     fn record_block_inputs(
