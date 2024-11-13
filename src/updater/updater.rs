@@ -22,8 +22,4 @@ pub trait Updater {
         blkhash: BlockHash,
         found_inputs: HashSet<OutPoint>,
     ) -> Result<()>;
-
-    fn mark_mined(&mut self, outpoint: OutPoint, mined_in_block: BlockHash) -> Result<()>;
-
-    fn revert_spent_status(&mut self, outpoint: OutPoint) -> Result<()>;
 }
