@@ -7,8 +7,8 @@ use anyhow::Result;
 use crate::client::OwnedOutput;
 
 pub trait Updater {
-    /// Ask the updater to record the scanning height.
-    fn record_scan_height(&mut self, height: Height) -> Result<()>;
+    /// Ask the updater to record the scanning progress.
+    fn record_scan_progress(&mut self, start: Height, current: Height, end: Height) -> Result<()>;
 
     /// Ask the updater to record the outputs found in a block.
     fn record_block_outputs(
