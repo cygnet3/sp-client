@@ -71,7 +71,8 @@ impl SpScanner {
 
         // after processing, send update
         if keep_scanning.load(std::sync::atomic::Ordering::Relaxed) {
-            self.updater.update_last_scan(end);
+            self.updater.record_scan_height(end)?;
+            self.updater.save_to_persistent_storage()?;
         }
 
         // time elapsed for the scan
@@ -97,8 +98,6 @@ impl SpScanner {
             let blkheight = blockdata.blkheight;
             let blkhash = blockdata.blkhash;
 
-            self.updater.send_scan_progress(blkheight);
-
             let mut send_update = false;
 
             // send update after 30 seconds since last update
@@ -112,7 +111,7 @@ impl SpScanner {
             if !found_outputs.is_empty() {
                 send_update = true;
                 self.updater
-                    .record_block_outputs(blkheight, blkhash, found_outputs);
+                    .record_block_outputs(blkheight, blkhash, found_outputs)?;
             }
 
             if !found_inputs.is_empty() {
@@ -121,14 +120,17 @@ impl SpScanner {
                     .record_block_inputs(blkheight, blkhash, found_inputs)?;
             }
 
+            // tell the updater we scanned this block
+            self.updater.record_scan_height(blkheight)?;
+
             // stop scanning and return if keep_scanning is set to false
             if !keep_scanning.load(std::sync::atomic::Ordering::Relaxed) {
-                self.updater.update_last_scan(blkheight);
+                self.updater.save_to_persistent_storage()?;
                 return Ok(());
             }
 
             if send_update {
-                self.updater.update_last_scan(blkheight);
+                self.updater.save_to_persistent_storage()?;
             }
         }
 
