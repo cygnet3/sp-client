@@ -22,25 +22,28 @@ use crate::{
     updater::Updater,
 };
 
-pub struct SpScanner {
+pub struct SpScanner<'a> {
     updater: Box<dyn Updater + Sync + Send>,
     backend: Box<dyn ChainBackend + Sync + Send>,
     client: SpClient,
+    keep_scanning: &'a AtomicBool,      // used to interrupt scanning
     owned_outpoints: HashSet<OutPoint>, // used to scan block inputs
 }
 
-impl SpScanner {
+impl<'a> SpScanner<'a> {
     pub fn new(
         client: SpClient,
         updater: Box<dyn Updater + Sync + Send>,
         backend: Box<dyn ChainBackend + Sync + Send>,
         owned_outpoints: HashSet<OutPoint>,
+        keep_scanning: &'a AtomicBool,
     ) -> Self {
         Self {
             client,
             updater,
             backend,
             owned_outpoints,
+            keep_scanning,
         }
     }
 
@@ -50,7 +53,6 @@ impl SpScanner {
         end: Height,
         dust_limit: Amount,
         with_cutthrough: bool,
-        keep_scanning: &AtomicBool,
     ) -> Result<()> {
         if start > end {
             bail!("bigger start than end: {} > {}", start, end);
@@ -66,8 +68,7 @@ impl SpScanner {
                 .get_block_data_for_range(range, dust_limit, with_cutthrough);
 
         // process blocks using block data stream
-        self.process_blocks(start, end, block_data_stream, keep_scanning)
-            .await?;
+        self.process_blocks(start, end, block_data_stream).await?;
 
         // time elapsed for the scan
         info!(
@@ -83,7 +84,6 @@ impl SpScanner {
         start: Height,
         end: Height,
         block_data_stream: impl Stream<Item = Result<BlockData>>,
-        keep_scanning: &AtomicBool,
     ) -> Result<()> {
         pin_mut!(block_data_stream);
 
@@ -370,5 +370,11 @@ impl SpScanner {
         } else {
             Ok(false)
         }
+    }
+
+    fn interrupt_requested(&self) -> bool {
+        !self
+            .keep_scanning
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
