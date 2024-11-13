@@ -7,20 +7,25 @@ use anyhow::Result;
 use crate::client::OwnedOutput;
 
 pub trait Updater {
-    fn update_last_scan(&mut self, height: Height);
+    /// Ask the updater to record the scanning height.
+    fn record_scan_height(&mut self, height: Height) -> Result<()>;
 
-    fn send_scan_progress(&self, current: Height);
-
+    /// Ask the updater to record the outputs found in a block.
     fn record_block_outputs(
         &mut self,
         height: Height,
         blkhash: BlockHash,
         found_outputs: HashMap<OutPoint, OwnedOutput>,
-    );
+    ) -> Result<()>;
+
+    /// Ask the updater to record the inputs found in a block.
     fn record_block_inputs(
         &mut self,
         blkheight: Height,
         blkhash: BlockHash,
         found_inputs: HashSet<OutPoint>,
     ) -> Result<()>;
+
+    /// Ask the updater to save all recorded changes to persistent storage.
+    fn save_to_persistent_storage(&mut self) -> Result<()>;
 }
