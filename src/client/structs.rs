@@ -1,9 +1,10 @@
 use anyhow::Error;
 use bitcoin::{
     absolute::Height,
+    address::NetworkUnchecked,
     key::Secp256k1,
     secp256k1::{PublicKey, SecretKey},
-    Amount, ScriptBuf,
+    Address, Amount, Network, OutPoint, ScriptBuf, Transaction, TxIn, TxOut,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,11 +27,29 @@ pub struct OwnedOutput {
     pub label: Option<String>,
     pub spend_status: OutputSpendStatus,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum RecipientAddress {
+    LegacyAddress(Address<NetworkUnchecked>),
+    SpAddress(String), // We need to implement Serialize for SilentPaymentAddress
+    Data(Vec<u8>),     // OpReturn output
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Recipient {
-    pub address: String, // either old school or silent payment
-    pub amount: Amount,
-    pub nb_outputs: u32, // if address is not SP, only 1 is valid
+    pub address: RecipientAddress, // either old school or silent payment
+    pub amount: Amount,            // must be 0 if address is Data.
+    pub nb_outputs: u32,           // if address is not SP, only 1 is valid
+    pub outputs: Vec<TxOut>,
+}
+
+// this will be replaced by a proper psbt as soon as sp support is standardised
+pub struct SilentPaymentUnsignedTransaction {
+    pub selected_utxos: Vec<(OutPoint, OwnedOutput)>,
+    pub recipients: Vec<Recipient>,
+    pub partial_secret: SecretKey,
+    pub unsigned_tx: Option<Transaction>,
+    pub network: Network,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
