@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     io::Write,
     str::FromStr,
 };
@@ -10,21 +10,16 @@ use bdk_coin_select::{
 };
 use bitcoin::{
     absolute::LockTime,
-    consensus::{deserialize, serialize},
     key::{constants::ONE, TapTweak},
-    psbt::PsbtSighashType,
     script::PushBytesBuf,
     secp256k1::{Keypair, Message, PublicKey, Scalar, Secp256k1, SecretKey, ThirtyTwoByteHash},
     sighash::{Prevouts, SighashCache},
     taproot::Signature,
     transaction::Version,
-    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, TapLeafHash, Transaction, TxIn, TxOut,
+    Amount, Network, OutPoint, ScriptBuf, Sequence, TapLeafHash, Transaction, TxIn, TxOut,
     Witness, XOnlyPublicKey,
 };
-use bitcoin::{
-    hashes::Hash,
-    psbt::{raw, Input, Output},
-};
+use bitcoin::hashes::Hash;
 use serde::{Deserialize, Serialize};
 
 use silentpayments::utils as sp_utils;
@@ -37,11 +32,8 @@ use silentpayments::{
 use anyhow::{Error, Result};
 
 use crate::constants::{
-    DATA_CARRIER_SIZE, DUST_THRESHOLD, NUMS, PSBT_SP_ADDRESS_KEY, PSBT_SP_PREFIX, PSBT_SP_SUBTYPE,
-    PSBT_SP_TWEAK_KEY,
+    DATA_CARRIER_SIZE, NUMS
 };
-
-pub use bitcoin::psbt::Psbt;
 
 use super::{
     OutputSpendStatus, OwnedOutput, Recipient, RecipientAddress, SilentPaymentUnsignedTransaction,
@@ -162,9 +154,7 @@ impl SpClient {
             .iter()
             .map(|r| {
                 let script_pubkey = match &r.address {
-                    RecipientAddress::SpAddress(s) => {
-                        let sp_address = SilentPaymentAddress::try_from(s.as_str())?;
-
+                    RecipientAddress::SpAddress(sp_address) => {
                         if sp_address.get_network() != address_sp_network {
                             return Err(Error::msg(format!(
                                 "Wrong network for address {}",
@@ -172,7 +162,7 @@ impl SpClient {
                             )));
                         }
 
-                        sp_addresses.push(s.clone());
+                        sp_addresses.push(sp_address.clone());
 
                         placeholder_spk.clone()
                     }
@@ -251,7 +241,7 @@ impl SpClient {
         if change_value > 0 {
             let change_address = self.sp_receiver.get_change_address();
             recipients.push(Recipient {
-                address: RecipientAddress::SpAddress(change_address),
+                address: RecipientAddress::SpAddress(change_address.try_into()?),
                 amount: Amount::from_sat(change_value),
                 nb_outputs: 1,
                 outputs: vec![],
@@ -300,34 +290,27 @@ impl SpClient {
         }
 
         // We now need to fill the sp outputs with actual spk
-        let sp_addresses: Result<Vec<String>> = unsigned_transaction
+        let sp_addresses: Vec<String> = unsigned_transaction
             .recipients
             .iter()
             .filter_map(|r| match &r.address {
-                RecipientAddress::SpAddress(address_str) => {
-                    match TryInto::<SilentPaymentAddress>::try_into(address_str.as_str()) {
-                        Ok(sp_address) => Some(Ok(sp_address.to_string())),
-                        Err(e) => Some(Err(e)),
-                    }
+                RecipientAddress::SpAddress(address) => {
+                    Some(address.to_string())
                 }
                 _ => None,
-            })
-            .map(|res| {
-                let sp_address = res?;
-                Ok(sp_address)
             })
             .collect();
 
         let sp_address2xonlypubkeys = silentpayments::sending::generate_recipient_pubkeys(
-            sp_addresses?,
+            sp_addresses,
             unsigned_transaction.partial_secret,
         )?;
 
         for recipient in &unsigned_transaction.recipients {
             let spks = match &recipient.address {
-                RecipientAddress::SpAddress(s) => {
+                RecipientAddress::SpAddress(sp_address) => {
                     let pubkeys = sp_address2xonlypubkeys
-                        .get(s.as_str())
+                        .get(sp_address.to_string().as_str())
                         .ok_or(Error::msg("Unknown sp address"))?;
                     let mut scripts = Vec::with_capacity(pubkeys.len());
                     for pubkey in pubkeys {
