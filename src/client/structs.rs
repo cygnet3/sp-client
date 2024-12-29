@@ -1,10 +1,8 @@
+use std::str::FromStr;
+
 use anyhow::Error;
 use bitcoin::{
-    absolute::Height,
-    address::NetworkUnchecked,
-    key::Secp256k1,
-    secp256k1::{PublicKey, SecretKey},
-    Address, Amount, Network, OutPoint, ScriptBuf, Transaction, TxIn, TxOut,
+    absolute::Height, address::NetworkUnchecked, hex::{DisplayHex, FromHex}, key::Secp256k1, secp256k1::{PublicKey, SecretKey}, Address, Amount, Network, OutPoint, ScriptBuf, Transaction, TxOut
 };
 use serde::{Deserialize, Serialize};
 use silentpayments::utils::SilentPaymentAddress;
@@ -34,6 +32,32 @@ pub enum RecipientAddress {
     LegacyAddress(Address<NetworkUnchecked>),
     SpAddress(SilentPaymentAddress), // We need to implement Serialize for SilentPaymentAddress
     Data(Vec<u8>),     // OpReturn output
+}
+
+impl TryFrom<String> for RecipientAddress {
+    type Error = anyhow::Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {        
+        if let Ok(sp_address) = SilentPaymentAddress::try_from(value.as_str()) {
+            Ok(Self::SpAddress(sp_address.into()))
+        } else if let Ok(legacy_address) = Address::from_str(&value) {
+            Ok(Self::LegacyAddress(legacy_address))
+        } else if let Ok(data) = Vec::from_hex(&value) {
+            Ok(Self::Data(data))
+        } else {
+            Err(anyhow::Error::msg("Unknown recipient address type"))
+        }
+    } 
+
+}
+
+impl From<RecipientAddress> for String {
+    fn from(value: RecipientAddress) -> Self {
+        match value {
+            RecipientAddress::LegacyAddress(address) => address.assume_checked().to_string(),
+            RecipientAddress::SpAddress(sp_address) => sp_address.to_string(),
+            RecipientAddress::Data(data) => data.to_lower_hex_string(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
