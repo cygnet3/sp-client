@@ -4,9 +4,10 @@ use bitcoin::{
     address::NetworkUnchecked,
     key::Secp256k1,
     secp256k1::{PublicKey, SecretKey},
-    Address, Amount, Network, OutPoint, ScriptBuf, Transaction, TxIn, TxOut,
+    Address, Amount, Network, OutPoint, ScriptBuf, Transaction, TxOut,
 };
 use serde::{Deserialize, Serialize};
+use silentpayments::utils::SilentPaymentAddress;
 
 type SpendingTxId = String;
 type MinedInBlock = String;
@@ -31,8 +32,8 @@ pub struct OwnedOutput {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum RecipientAddress {
     LegacyAddress(Address<NetworkUnchecked>),
-    SpAddress(String), // We need to implement Serialize for SilentPaymentAddress
-    Data(Vec<u8>),     // OpReturn output
+    SpAddress(SilentPaymentAddress),
+    Data(Vec<u8>), // OpReturn output
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
