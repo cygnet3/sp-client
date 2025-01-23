@@ -127,9 +127,9 @@ impl SpClient {
     // For now it's only suitable for wallet that spends only silent payments outputs that it owns
     pub fn create_new_transaction(
         &self, // We need it to get the private spend key, and less importantly, the change address
-        available_utxos: Vec<(String, OwnedOutput)>,
+        available_utxos: Vec<(OutPoint, OwnedOutput)>,
         mut recipients: Vec<Recipient>,
-        fee_rate: u32,
+        fee_rate: f32,
         network: Network,
     ) -> Result<SilentPaymentUnsignedTransaction> {
         let placeholder_spk = ScriptBuf::new_p2tr_tweaked(
@@ -193,8 +193,8 @@ impl SpClient {
 
         let tx_outs = _outputs?;
 
-        let spendable_utxos: Vec<&(String, OwnedOutput)> = available_utxos
-            .iter()
+        let spendable_utxos: Vec<(OutPoint, OwnedOutput)> = available_utxos
+            .into_iter()
             .filter(|(_, o)| o.spend_status == OutputSpendStatus::Unspent)
             .collect();
 
@@ -210,7 +210,7 @@ impl SpClient {
             ChangePolicy::min_value(DrainWeights::TR_KEYSPEND, TR_DUST_RELAY_MIN_VALUE); // The min may need to be adjusted, 2 or 3x that would be sensible
 
         let target = Target {
-            fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(fee_rate as f32)),
+            fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(fee_rate)),
             outputs: TargetOutputs::fund_outputs(
                 tx_outs
                     .iter()
@@ -224,8 +224,8 @@ impl SpClient {
 
         let mut selected_utxos = vec![];
         for i in selected_indices {
-            let (outpoint, output) = spendable_utxos[*i];
-            selected_utxos.push((OutPoint::from_str(&outpoint)?, output.clone()));
+            let (outpoint, output) = &spendable_utxos[*i];
+            selected_utxos.push((*outpoint, output.clone()));
         }
 
         let change = coin_selector.drain(target, change_policy);
