@@ -36,6 +36,14 @@ impl SpClient {
         fee_rate: f32,
         network: Network,
     ) -> Result<SilentPaymentUnsignedTransaction> {
+        // check that all available outputs are unspent
+        if available_utxos
+            .iter()
+            .any(|(_, o)| o.spend_status != OutputSpendStatus::Unspent)
+        {
+            return Err(Error::msg(format!("All outputs must be unspent")));
+        }
+
         // used to estimate the size of a taproot output
         let placeholder_spk = ScriptBuf::new_p2tr_tweaked(
             bitcoin::XOnlyPublicKey::from_str(NUMS)
@@ -102,13 +110,8 @@ impl SpClient {
             })
             .collect::<Result<Vec<TxOut>>>()?;
 
-        let spendable_utxos: Vec<(OutPoint, OwnedOutput)> = available_utxos
-            .into_iter()
-            .filter(|(_, o)| o.spend_status == OutputSpendStatus::Unspent)
-            .collect();
-
         // as a silent payment wallet, we only spend taproot outputs
-        let candidates: Vec<Candidate> = spendable_utxos
+        let candidates: Vec<Candidate> = available_utxos
             .iter()
             .map(|(_, o)| Candidate::new_tr_keyspend(o.amount.to_sat()))
             .collect();
@@ -134,7 +137,7 @@ impl SpClient {
         let selected_indices = coin_selector.selected_indices();
         let mut selected_utxos = vec![];
         for i in selected_indices {
-            let (outpoint, output) = &spendable_utxos[*i];
+            let (outpoint, output) = &available_utxos[*i];
             selected_utxos.push((*outpoint, output.clone()));
         }
 
