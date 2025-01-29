@@ -164,6 +164,112 @@ impl SpClient {
         })
     }
 
+    /// A drain transaction spends all the available utxos to a single RecipientAddress.
+    pub fn create_drain_transaction(
+        &self,
+        available_utxos: Vec<(OutPoint, OwnedOutput)>,
+        recipient: RecipientAddress,
+        fee_rate: f32,
+        network: Network,
+    ) -> Result<SilentPaymentUnsignedTransaction> {
+        // check that all available outputs are unspent
+        if available_utxos
+            .iter()
+            .any(|(_, o)| o.spend_status != OutputSpendStatus::Unspent)
+        {
+            return Err(Error::msg(format!("All outputs must be unspent")));
+        }
+
+        // used to estimate the size of a taproot output
+        let placeholder_spk = ScriptBuf::new_p2tr_tweaked(
+            bitcoin::XOnlyPublicKey::from_str(NUMS)
+                .expect("NUMS is always valid")
+                .dangerous_assume_tweaked(),
+        );
+
+        let address_sp_network = match network {
+            Network::Bitcoin => SpNetwork::Mainnet,
+            Network::Testnet | Network::Signet => SpNetwork::Testnet,
+            Network::Regtest => SpNetwork::Regtest,
+            _ => unreachable!(),
+        };
+
+        let output = match &recipient {
+            RecipientAddress::LegacyAddress(address) => Ok(TxOut {
+                value: Amount::ZERO,
+                script_pubkey: address.clone().require_network(network)?.script_pubkey(),
+            }),
+            RecipientAddress::SpAddress(sp_address) => {
+                if sp_address.get_network() != address_sp_network {
+                    return Err(Error::msg(format!(
+                        "Wrong network for address {}",
+                        sp_address
+                    )));
+                }
+
+                Ok(TxOut {
+                    value: Amount::ZERO,
+                    script_pubkey: placeholder_spk.clone(),
+                })
+            }
+            RecipientAddress::Data(_) => Err(Error::msg("Draining to OP_RETURN not allowed")),
+        }?;
+
+        // for a drain transaction, we have no target outputs.
+        // instead, we register the recipient as the drain output.
+        let target_outputs = TargetOutputs {
+            value_sum: 0,
+            weight_sum: 0,
+            n_outputs: 0,
+        };
+
+        let drain_output = DrainWeights {
+            output_weight: output.weight().to_wu(),
+            spend_weight: 0,
+            n_outputs: 1,
+        };
+
+        // as a silent payment wallet, we only spend taproot outputs
+        let candidates: Vec<Candidate> = available_utxos
+            .iter()
+            .map(|(_, o)| Candidate::new(o.amount.to_sat(), TR_KEYSPEND_SATISFACTION_WEIGHT, true))
+            .collect();
+
+        let mut coin_selector = CoinSelector::new(&candidates);
+
+        // we force a change, by having the min_value be set to 0
+        let change_policy = ChangePolicy::min_value(drain_output, 0);
+
+        let target = Target {
+            fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(fee_rate)),
+            outputs: target_outputs,
+        };
+
+        // for a drain transaction, we select all avaliable inputs
+        coin_selector.select_all();
+
+        let change = coin_selector.drain(target, change_policy);
+
+        if change.is_none() {
+            return Err(Error::msg("No funds available"));
+        }
+
+        let recipients = vec![Recipient {
+            address: recipient,
+            amount: Amount::from_sat(change.value),
+        }];
+
+        let partial_secret = self.get_partial_secret_for_selected_utxos(&available_utxos)?;
+
+        Ok(SilentPaymentUnsignedTransaction {
+            selected_utxos: available_utxos,
+            recipients,
+            partial_secret,
+            unsigned_tx: None,
+            network,
+        })
+    }
+
     /// Once we reviewed the temporary transaction state, we can turn it into a transaction
     pub fn finalize_transaction(
         mut unsigned_transaction: SilentPaymentUnsignedTransaction,
