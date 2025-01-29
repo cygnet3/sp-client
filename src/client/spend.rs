@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use bdk_coin_select::{
     Candidate, ChangePolicy, CoinSelector, DrainWeights, FeeRate, Target, TargetFee, TargetOutputs,
-    TR_DUST_RELAY_MIN_VALUE,
+    TR_DUST_RELAY_MIN_VALUE, TR_KEYSPEND_SATISFACTION_WEIGHT,
 };
 use bitcoin::{
     absolute::LockTime,
@@ -113,7 +113,7 @@ impl SpClient {
         // as a silent payment wallet, we only spend taproot outputs
         let candidates: Vec<Candidate> = available_utxos
             .iter()
-            .map(|(_, o)| Candidate::new_tr_keyspend(o.amount.to_sat()))
+            .map(|(_, o)| Candidate::new(o.amount.to_sat(), TR_KEYSPEND_SATISFACTION_WEIGHT, true))
             .collect();
 
         let mut coin_selector = CoinSelector::new(&candidates);
