@@ -10,7 +10,7 @@ use bitcoin::{
     Address, Amount, Network, OutPoint, ScriptBuf, Transaction,
 };
 use serde::{Deserialize, Serialize};
-use silentpayments::utils::SilentPaymentAddress;
+use silentpayments::SilentPaymentAddress;
 
 type SpendingTxId = String;
 type MinedInBlock = String;
