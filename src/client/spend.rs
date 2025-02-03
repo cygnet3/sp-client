@@ -16,7 +16,7 @@ use bitcoin::{
 };
 
 use silentpayments::utils as sp_utils;
-use silentpayments::utils::{Network as SpNetwork, SilentPaymentAddress};
+use silentpayments::{Network as SpNetwork, SilentPaymentAddress};
 
 use anyhow::{Error, Result};
 
@@ -285,11 +285,11 @@ impl SpClient {
             })
             .collect();
 
-        let sp_addresses: Vec<String> = unsigned_transaction
+        let sp_addresses: Vec<SilentPaymentAddress> = unsigned_transaction
             .recipients
             .iter()
             .filter_map(|r| match &r.address {
-                RecipientAddress::SpAddress(sp_address) => Some(sp_address.to_string()),
+                RecipientAddress::SpAddress(sp_address) => Some(sp_address.to_owned()),
                 _ => None,
             })
             .collect();
@@ -306,7 +306,7 @@ impl SpClient {
                 RecipientAddress::SpAddress(s) => {
                     // We now need to fill the sp outputs with actual spk
                     let pubkeys = sp_address2xonlypubkeys
-                        .get(&s.to_string())
+                        .get(s)
                         .ok_or(Error::msg("Unknown sp address"))?;
 
                     // we currently only allow having 1 output per silent payment address

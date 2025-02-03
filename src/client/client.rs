@@ -9,10 +9,11 @@ use bitcoin::{
 use serde::{Deserialize, Serialize};
 
 use silentpayments::utils as sp_utils;
-use silentpayments::utils::{Network as SpNetwork, SilentPaymentAddress};
+use silentpayments::Network as SpNetwork;
 use silentpayments::{
     bitcoin_hashes::sha256,
     receiving::{Label, Receiver},
+    SilentPaymentAddress,
 };
 
 use anyhow::{Error, Result};
@@ -88,7 +89,7 @@ impl SpClient {
         })
     }
 
-    pub fn get_receiving_address(&self) -> String {
+    pub fn get_receiving_address(&self) -> SilentPaymentAddress {
         self.sp_receiver.get_receiving_address()
     }
 
