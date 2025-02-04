@@ -33,6 +33,7 @@ pub struct OwnedOutput {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(untagged)]
 pub enum RecipientAddress {
     LegacyAddress(Address<NetworkUnchecked>),
     SpAddress(SilentPaymentAddress),
