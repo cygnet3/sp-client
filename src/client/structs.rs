@@ -71,6 +71,7 @@ pub struct Recipient {
     pub amount: Amount,            // must be 0 if address is Data.
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 // this will be replaced by a proper psbt as soon as sp support is standardised
 pub struct SilentPaymentUnsignedTransaction {
     pub selected_utxos: Vec<(OutPoint, OwnedOutput)>,
