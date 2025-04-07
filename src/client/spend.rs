@@ -450,7 +450,7 @@ impl SpClient {
         Ok(signed)
     }
 
-    fn get_partial_secret_for_selected_utxos(
+    pub fn get_partial_secret_for_selected_utxos(
         &self,
         selected_utxos: &[(OutPoint, OwnedOutput)],
     ) -> Result<SecretKey> {
