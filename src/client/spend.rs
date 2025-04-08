@@ -33,7 +33,7 @@ impl SpClient {
         &self,
         available_utxos: Vec<(OutPoint, OwnedOutput)>,
         mut recipients: Vec<Recipient>,
-        fee_rate: f32,
+        fee_rate: FeeRate,
         network: Network,
     ) -> Result<SilentPaymentUnsignedTransaction> {
         // check that all available outputs are unspent
@@ -123,7 +123,7 @@ impl SpClient {
             ChangePolicy::min_value(DrainWeights::TR_KEYSPEND, TR_DUST_RELAY_MIN_VALUE);
 
         let target = Target {
-            fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(fee_rate)),
+            fee: TargetFee::from_feerate(fee_rate),
             outputs: TargetOutputs::fund_outputs(
                 tx_outs
                     .iter()
