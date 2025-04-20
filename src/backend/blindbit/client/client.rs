@@ -1,11 +1,13 @@
 use std::time::Duration;
 
-use bitcoin::{absolute::Height, secp256k1::PublicKey, Amount};
+use bitcoin::{absolute::Height, secp256k1::PublicKey, Amount, Txid};
 use reqwest::{Client, Url};
 
 use anyhow::Result;
 
-use super::structs::{BlockHeightResponse, FilterResponse, SpentIndexResponse, UtxoResponse};
+use super::structs::{
+    BlockHeightResponse, FilterResponse, ForwardTxRequest, SpentIndexResponse, UtxoResponse,
+};
 
 #[derive(Clone)]
 pub struct BlindbitClient {
@@ -14,7 +16,8 @@ pub struct BlindbitClient {
 }
 
 impl BlindbitClient {
-    pub fn new(mut host_url: Url) -> Self {
+    pub fn new(host_url: String) -> Result<Self> {
+        let mut host_url = Url::parse(&host_url)?;
         let client = reqwest::Client::new();
 
         // we need a trailing slash, if not present we append it
@@ -22,7 +25,7 @@ impl BlindbitClient {
             host_url.set_path(&format!("{}/", host_url.path()));
         }
 
-        BlindbitClient { client, host_url }
+        Ok(BlindbitClient { client, host_url })
     }
     pub async fn block_height(&self) -> Result<Height> {
         let url = self.host_url.join("block-height")?;
@@ -103,8 +106,13 @@ impl BlindbitClient {
         Ok(serde_json::from_str(&res.text().await?)?)
     }
 
-    #[allow(dead_code)]
-    pub async fn forward_tx(&self) {
-        // not needed
+    pub async fn forward_tx(&self, tx_hex: String) -> Result<Txid> {
+        let url = self.host_url.join("forward-tx")?;
+
+        let body = ForwardTxRequest::new(tx_hex);
+
+        let res = self.client.post(url).json(&body).send().await?;
+
+        Ok(serde_json::from_str(&res.text().await?)?)
     }
 }

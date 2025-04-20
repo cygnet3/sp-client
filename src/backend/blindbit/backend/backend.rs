@@ -3,7 +3,6 @@ use std::{ops::RangeInclusive, pin::Pin, sync::Arc};
 use async_trait::async_trait;
 use bitcoin::{absolute::Height, Amount};
 use futures::{stream, Stream, StreamExt};
-use reqwest::Url;
 
 use anyhow::Result;
 
@@ -17,9 +16,8 @@ pub struct BlindbitBackend {
 
 impl BlindbitBackend {
     pub fn new(blindbit_url: String) -> Result<Self> {
-        let host_url = Url::parse(&blindbit_url)?;
         Ok(Self {
-            client: BlindbitClient::new(host_url),
+            client: BlindbitClient::new(blindbit_url)?,
         })
     }
 }
