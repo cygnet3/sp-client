@@ -1,5 +1,5 @@
 use bitcoin::{absolute::Height, Amount, BlockHash, ScriptBuf, Txid};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{FilterData, SpentIndexData, UtxoData};
 
@@ -67,5 +67,16 @@ impl From<FilterResponse> for FilterData {
             block_hash: value.block_hash,
             data: value.data.hex,
         }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ForwardTxRequest {
+    data: String,
+}
+
+impl ForwardTxRequest {
+    pub fn new(tx_hex: String) -> Self {
+        Self { data: tx_hex }
     }
 }

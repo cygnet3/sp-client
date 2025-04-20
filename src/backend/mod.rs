@@ -8,3 +8,6 @@ pub use structs::*;
 
 #[cfg(feature = "blindbit-backend")]
 pub use blindbit::BlindbitBackend;
+
+#[cfg(feature = "blindbit-backend")]
+pub use blindbit::BlindbitClient;

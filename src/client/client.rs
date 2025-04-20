@@ -143,7 +143,7 @@ impl SpClient {
     }
 
     pub fn get_client_fingerprint(&self) -> Result<[u8; 8]> {
-        let sp_address: SilentPaymentAddress = self.get_receiving_address().try_into()?;
+        let sp_address: SilentPaymentAddress = self.get_receiving_address();
         let scan_pk = sp_address.get_scan_key();
         let spend_pk = sp_address.get_spend_key();
 
