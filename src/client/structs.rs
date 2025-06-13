@@ -107,12 +107,15 @@ impl From<SpendKey> for PublicKey {
         }
     }
 }
+
+impl SpendKey {
+    pub fn pk(&self) -> PublicKey {
         match self {
             Self::Secret(k) => {
                 let secp = Secp256k1::signing_only();
                 k.public_key(&secp)
             }
-            Self::Public(p) => p,
+            Self::Public(p) => *p,
         }
     }
 }
