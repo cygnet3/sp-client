@@ -10,7 +10,7 @@ use bitcoin::{
     Address, Amount, Network, OutPoint, ScriptBuf, Transaction,
 };
 use serde::{Deserialize, Serialize};
-use silentpayments::SilentPaymentAddress;
+use silentpayments::{receiving::Label, SilentPaymentAddress};
 
 type SpendingTxId = String;
 type MinedInBlock = String;
@@ -28,7 +28,7 @@ pub struct OwnedOutput {
     pub tweak: [u8; 32], // scalar in big endian format
     pub amount: Amount,
     pub script: ScriptBuf,
-    pub label: Option<String>,
+    pub label: Option<Label>,
     pub spend_status: OutputSpendStatus,
 }
 
