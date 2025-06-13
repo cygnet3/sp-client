@@ -197,7 +197,7 @@ impl<'a> SpScanner<'a> {
                             tweak: tweak.to_be_bytes(),
                             amount: utxo.value,
                             script: utxo.scriptpubkey,
-                            label: label.map(|l| l.as_string()),
+                            label,
                             spend_status: OutputSpendStatus::Unspent,
                         };
 
@@ -305,7 +305,7 @@ impl<'a> SpScanner<'a> {
                     Ok(xonly) => {
                         for (label, map) in ours.iter() {
                             if let Some(scalar) = map.get(&xonly) {
-                                res.push((label.clone(), utxo, scalar.clone()));
+                                res.push((label.clone(), utxo, *scalar));
                                 break;
                             }
                         }
