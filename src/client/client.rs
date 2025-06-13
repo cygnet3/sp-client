@@ -56,7 +56,6 @@ impl SpClient {
     pub fn new(scan_sk: SecretKey, spend_key: SpendKey, network: Network) -> Result<Self> {
         let secp = Secp256k1::signing_only();
         let scan_pubkey = scan_sk.public_key(&secp);
-        let sp_receiver: Receiver;
         let change_label = Label::new(scan_sk, 0);
 
         let sp_network = match network {
@@ -65,21 +64,8 @@ impl SpClient {
             Network::Testnet | Network::Signet => SpNetwork::Testnet,
             _ => unreachable!(),
         };
-        match spend_key {
-            SpendKey::Public(key) => {
-                sp_receiver = Receiver::new(0, scan_pubkey, key, change_label.into(), sp_network)?;
-            }
-            SpendKey::Secret(key) => {
-                let spend_pubkey = key.public_key(&secp);
-                sp_receiver = Receiver::new(
-                    0,
-                    scan_pubkey,
-                    spend_pubkey,
-                    change_label.into(),
-                    sp_network,
-                )?;
-            }
-        }
+
+        let sp_receiver = Receiver::new(0, scan_pubkey, spend_key.pk(), change_label, sp_network)?;
 
         Ok(Self {
             scan_sk,
