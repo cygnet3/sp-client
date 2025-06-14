@@ -1,5 +1,6 @@
-use bitcoin::{absolute::Height, Amount, BlockHash, ScriptBuf, Txid};
-use serde::{Deserialize, Serialize};
+#![allow(dead_code)]
+use bitcoin::{absolute::Height, Amount, BlockHash, Network, ScriptBuf, Txid};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{FilterData, SpentIndexData, UtxoData};
 
@@ -79,4 +80,24 @@ impl ForwardTxRequest {
     pub fn new(tx_hex: String) -> Self {
         Self { data: tx_hex }
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InfoResponse {
+    #[serde(deserialize_with = "deserialize_network")]
+    pub network: Network,
+    pub height: Height,
+    pub tweaks_only: bool,
+    pub tweaks_full_basic: bool,
+    pub tweaks_full_with_dust_filter: bool,
+    pub tweaks_cut_through_with_dust_filter: bool,
+}
+
+fn deserialize_network<'de, D>(deserializer: D) -> Result<Network, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let buf = String::deserialize(deserializer)?;
+
+    Network::from_core_arg(&buf).map_err(serde::de::Error::custom)
 }
