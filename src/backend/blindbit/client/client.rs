@@ -5,6 +5,8 @@ use reqwest::{Client, Url};
 
 use anyhow::Result;
 
+use crate::backend::blindbit::client::structs::InfoResponse;
+
 use super::structs::{
     BlockHeightResponse, FilterResponse, ForwardTxRequest, SpentIndexResponse, UtxoResponse,
 };
@@ -113,6 +115,13 @@ impl BlindbitClient {
 
         let res = self.client.post(url).json(&body).send().await?;
 
+        Ok(serde_json::from_str(&res.text().await?)?)
+    }
+
+    pub async fn info(&self) -> Result<InfoResponse> {
+        let url = self.host_url.join("info")?;
+
+        let res = self.client.get(url).send().await?;
         Ok(serde_json::from_str(&res.text().await?)?)
     }
 }
