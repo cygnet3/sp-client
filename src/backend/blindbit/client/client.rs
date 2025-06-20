@@ -11,7 +11,7 @@ use super::structs::{
     BlockHeightResponse, FilterResponse, ForwardTxRequest, SpentIndexResponse, UtxoResponse,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlindbitClient {
     client: Client,
     host_url: Url,
@@ -29,6 +29,7 @@ impl BlindbitClient {
 
         Ok(BlindbitClient { client, host_url })
     }
+
     pub async fn block_height(&self) -> Result<Height> {
         let url = self.host_url.join("block-height")?;
 
