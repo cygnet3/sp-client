@@ -65,7 +65,13 @@ impl SpClient {
             _ => unreachable!(),
         };
 
-        let sp_receiver = Receiver::new(0, scan_pubkey, spend_key.pk(), change_label, sp_network)?;
+        let sp_receiver = Receiver::new(
+            0,
+            scan_pubkey,
+            (&spend_key).into(),
+            change_label,
+            sp_network,
+        )?;
 
         Ok(Self {
             scan_sk,
