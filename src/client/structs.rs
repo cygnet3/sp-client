@@ -96,26 +96,20 @@ impl TryInto<SecretKey> for SpendKey {
     }
 }
 
-impl From<SpendKey> for PublicKey {
-    fn from(value: SpendKey) -> Self {
+impl From<&SpendKey> for PublicKey {
+    fn from(value: &SpendKey) -> Self {
         match value {
             SpendKey::Secret(k) => {
                 let secp = Secp256k1::signing_only();
                 k.public_key(&secp)
             }
-            SpendKey::Public(p) => p,
+            SpendKey::Public(p) => *p,
         }
     }
 }
 
-impl SpendKey {
-    pub fn pk(&self) -> PublicKey {
-        match self {
-            Self::Secret(k) => {
-                let secp = Secp256k1::signing_only();
-                k.public_key(&secp)
-            }
-            Self::Public(p) => *p,
-        }
+impl From<SpendKey> for PublicKey {
+    fn from(value: SpendKey) -> Self {
+        value.into()
     }
 }
