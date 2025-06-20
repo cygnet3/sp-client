@@ -10,6 +10,7 @@ use crate::{backend::blindbit::BlindbitClient, BlockData, ChainBackend, SpentInd
 
 const CONCURRENT_FILTER_REQUESTS: usize = 200;
 
+#[derive(Debug)]
 pub struct BlindbitBackend {
     client: BlindbitClient,
 }
