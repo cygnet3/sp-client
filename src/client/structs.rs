@@ -12,8 +12,8 @@ use bitcoin::{
 use serde::{Deserialize, Serialize};
 use silentpayments::{receiving::Label, SilentPaymentAddress};
 
-type SpendingTxId = String;
-type MinedInBlock = String;
+type SpendingTxId = [u8; 32];
+type MinedInBlock = [u8; 32];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum OutputSpendStatus {
