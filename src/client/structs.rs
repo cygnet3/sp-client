@@ -12,8 +12,8 @@ use bitcoin::{
 use serde::{Deserialize, Serialize};
 use silentpayments::{receiving::Label, SilentPaymentAddress};
 
-type SpendingTxId = String;
-type MinedInBlock = String;
+type SpendingTxId = [u8; 32];
+type MinedInBlock = [u8; 32];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum OutputSpendStatus {
@@ -71,6 +71,7 @@ pub struct Recipient {
     pub amount: Amount,            // must be 0 if address is Data.
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 // this will be replaced by a proper psbt as soon as sp support is standardised
 pub struct SilentPaymentUnsignedTransaction {
     pub selected_utxos: Vec<(OutPoint, OwnedOutput)>,
