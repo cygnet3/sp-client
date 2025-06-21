@@ -1,0 +1,12 @@
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C", "target-feature=+crt-static",
+    "-C", "link-arg=--import-memory",
+    "-C", "link-arg=--initial-memory=2097152",
+    "-C", "link-arg=--max-memory=2097152",
+    "-C", "link-arg=--stack-first",
+    "-C", "link-arg=--export-table",
+]
+
+[build]
+target = "wasm32-unknown-unknown" 
