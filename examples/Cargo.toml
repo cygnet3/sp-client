@@ -1,0 +1,15 @@
+[package]
+name = "wasm_example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sp_client = { path = ".." }
+bitcoin = { version = "0.31.1", features = ["serde", "rand", "base64"] }
+hex = "0.4.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[lib]
+crate-type = ["cdylib"] 
