@@ -108,30 +108,52 @@ impl SpClient {
         &self,
         tweak_data_vec: Vec<PublicKey>,
     ) -> Result<HashMap<[u8; 34], PublicKey>> {
-        use rayon::prelude::*;
         let b_scan = &self.get_scan_key();
 
-        let shared_secrets: Vec<PublicKey> = tweak_data_vec
-            .into_par_iter()
-            .map(|tweak| sp_utils::receiving::calculate_ecdh_shared_secret(&tweak, b_scan))
-            .collect();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use rayon::prelude::*;
+            
+            let shared_secrets: Vec<PublicKey> = tweak_data_vec
+                .into_par_iter()
+                .map(|tweak| sp_utils::receiving::calculate_ecdh_shared_secret(&tweak, b_scan))
+                .collect();
 
-        let items: Result<Vec<_>> = shared_secrets
-            .into_par_iter()
-            .map(|secret| {
-                let spks = self.sp_receiver.get_spks_from_shared_secret(&secret)?;
+            let items: Result<Vec<_>> = shared_secrets
+                .into_par_iter()
+                .map(|secret| {
+                    let spks = self.sp_receiver.get_spks_from_shared_secret(&secret)?;
 
-                Ok((secret, spks.into_values()))
-            })
-            .collect();
+                    Ok((secret, spks.into_values()))
+                })
+                .collect();
 
-        let mut res = HashMap::new();
-        for (secret, spks) in items? {
-            for spk in spks {
-                res.insert(spk, secret);
+            let mut res = HashMap::new();
+            for (secret, spks) in items? {
+                for spk in spks {
+                    res.insert(spk, secret);
+                }
             }
+            Ok(res)
         }
-        Ok(res)
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Sequential fallback for WASM
+            let shared_secrets: Vec<PublicKey> = tweak_data_vec
+                .into_iter()
+                .map(|tweak| sp_utils::receiving::calculate_ecdh_shared_secret(&tweak, b_scan))
+                .collect();
+
+            let mut res = HashMap::new();
+            for secret in shared_secrets {
+                let spks = self.sp_receiver.get_spks_from_shared_secret(&secret)?;
+                for spk in spks.into_values() {
+                    res.insert(spk, secret);
+                }
+            }
+            Ok(res)
+        }
     }
 
     pub fn get_client_fingerprint(&self) -> Result<[u8; 8]> {
