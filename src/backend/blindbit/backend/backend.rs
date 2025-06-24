@@ -9,7 +9,10 @@ use futures::{stream, Stream, StreamExt};
 
 use anyhow::Result;
 
-use crate::{backend::blindbit::BlindbitClient, BlockData, ChainBackend, SpentIndexData, UtxoData};
+use crate::{backend::blindbit::BlindbitClient, BlockData, SpentIndexData, UtxoData};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::backend::ChainBackend;
 
 #[cfg(target_arch = "wasm32")]
 use crate::backend::ChainBackendWasm;

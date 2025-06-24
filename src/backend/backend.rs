@@ -7,6 +7,7 @@ use futures::Stream;
 
 use super::structs::{BlockData, SpentIndexData, UtxoData};
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait ChainBackend {
     fn get_block_data_for_range(
