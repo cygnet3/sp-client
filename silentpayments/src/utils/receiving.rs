@@ -95,7 +95,7 @@ pub fn calculate_tweak_data(
     let A_sum = PublicKey::combine_keys(input_pub_keys)?;
 
     let outpoints = NonEmptyArray::new(outpoints_data)?;
-    let input_hash = calculate_input_hash(outpoints, A_sum);
+    let input_hash = calculate_input_hash(outpoints.min(), A_sum);
 
     Ok(A_sum.mul_tweak(&secp, &input_hash)?)
 }
