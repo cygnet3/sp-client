@@ -1,6 +1,8 @@
 #[cfg(feature = "encode")]
 use core::fmt;
 
+#[cfg(any(feature = "sending", feature = "receiving"))]
+use crate::utils::script::is_eligible;
 use crate::Error;
 use crate::Result;
 #[cfg(any(feature = "sending", feature = "receiving"))]
@@ -87,6 +89,96 @@ impl OutPoint {
 
     pub fn to_bytes(&self) -> [u8; 36] {
         self.0
+    }
+}
+
+/// Parallel per-vin input data for BIP352 shared secret derivation.
+///
+/// All fields are indexed by input vin. Use [`Self::new`] and [`Self::push`] when building
+/// from chain data.
+#[cfg(any(feature = "sending", feature = "receiving"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TransactionInputs {
+    outpoints: Vec<OutPoint>,
+    script_pubkeys: Vec<Vec<u8>>,
+    input_pubkeys: Vec<Option<PublicKey>>,
+}
+
+#[cfg(any(feature = "sending", feature = "receiving"))]
+impl TransactionInputs {
+    /// Create an empty input set for incremental construction.
+    pub fn new() -> Self {
+        Self {
+            outpoints: Vec::new(),
+            script_pubkeys: Vec::new(),
+            input_pubkeys: Vec::new(),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            outpoints: Vec::with_capacity(capacity),
+            script_pubkeys: Vec::with_capacity(capacity),
+            input_pubkeys: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Append one transaction input.
+    pub fn push(
+        &mut self,
+        outpoint: OutPoint,
+        script_pubkey: Vec<u8>,
+        input_pubkey: Option<PublicKey>,
+    ) {
+        self.outpoints.push(outpoint);
+        self.script_pubkeys.push(script_pubkey);
+        self.input_pubkeys.push(input_pubkey);
+    }
+
+    pub fn len(&self) -> usize {
+        self.outpoints.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.outpoints.is_empty()
+    }
+
+    pub fn outpoints(&self) -> &[OutPoint] {
+        &self.outpoints
+    }
+
+    pub fn script_pubkeys(&self) -> &[Vec<u8>] {
+        &self.script_pubkeys
+    }
+
+    pub fn input_pubkeys(&self) -> &[Option<PublicKey>] {
+        &self.input_pubkeys
+    }
+
+    pub fn input_pubkey(&self, vin: usize) -> Option<&PublicKey> {
+        self.input_pubkeys.get(vin).and_then(|pk| pk.as_ref())
+    }
+
+    pub(crate) fn min_outpoint(&self) -> &OutPoint {
+        self.outpoints.iter().min().expect("non-empty")
+    }
+
+    pub(crate) fn eligible_pubkeys(&self) -> Result<Vec<&PublicKey>> {
+        let eligible: Vec<&PublicKey> = self
+            .script_pubkeys
+            .iter()
+            .zip(&self.input_pubkeys)
+            .filter_map(|(spk, pk)| pk.as_ref().filter(|_| is_eligible(spk)))
+            .collect();
+        if eligible.is_empty() {
+            return Err(Error::GenericError("No eligible input pubkeys".to_owned()));
+        }
+        Ok(eligible)
+    }
+
+    pub(crate) fn eligible_pubkeys_sum(&self) -> Result<PublicKey> {
+        let eligible_pubkeys = self.eligible_pubkeys()?;
+        Ok(PublicKey::combine_keys(&eligible_pubkeys)?)
     }
 }
 
