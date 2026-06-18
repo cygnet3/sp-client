@@ -27,6 +27,7 @@ reqwest = { version = "0.12.4", features = [
   "rustls-tls",
   "gzip",
 ], default-features = false }
+rust-dleq = { git = "https://github.com/Sosthene00/rust-dleq.git", rev = "097644a14d87c454e9bd9895de2e60992ff1ba93", default-features = false }
 secp256k1 = { version = "0.29.0" }
 rand = "0.8"
 

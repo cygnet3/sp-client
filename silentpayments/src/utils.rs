@@ -8,7 +8,10 @@ pub(crate) mod hash;
 pub mod receiving;
 #[cfg(any(feature = "sending", feature = "receiving"))]
 pub(crate) mod script;
-#[cfg(feature = "sending")]
+#[cfg(all(
+    feature = "sending",
+    any(feature = "dleq-standalone", feature = "dleq-native")
+))]
 pub mod sending;
 
 pub(crate) mod common;
