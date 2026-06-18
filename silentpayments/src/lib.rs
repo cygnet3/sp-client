@@ -14,13 +14,13 @@ pub use secp256k1;
 
 pub use crate::error::Error;
 pub use utils::common::Network;
-#[cfg(any(feature = "sending", feature = "receiving"))]
-pub use utils::common::SharedSecret;
 #[cfg(feature = "encode")]
 pub use utils::common::SilentPaymentCode;
 pub use utils::common::SilentPaymentKeyMaterial;
 pub use utils::common::SpVersion;
 #[cfg(any(feature = "sending", feature = "receiving"))]
 pub use utils::common::TransactionInputs;
+#[cfg(any(feature = "sending", feature = "receiving"))]
+pub use utils::common::TransactionSharedSecret;
 
 pub type Result<T> = std::result::Result<T, Error>;

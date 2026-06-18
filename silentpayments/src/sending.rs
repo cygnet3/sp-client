@@ -12,8 +12,8 @@ use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use std::collections::HashMap;
 
 use crate::Result;
-use crate::utils::common::SharedSecret;
 use crate::utils::common::SilentPaymentKeyMaterial;
+use crate::utils::common::TransactionSharedSecret;
 use crate::utils::common::calculate_t_n;
 use crate::utils::sending::PartialSecret;
 use crate::utils::sending::calculate_ecdh_shared_secret;
@@ -50,9 +50,10 @@ where
 {
     let secp = Secp256k1::new();
 
-    let mut silent_payment_groups: HashMap<PublicKey, (SharedSecret, Vec<T>)> = HashMap::new();
+    let mut silent_payment_groups: HashMap<PublicKey, (TransactionSharedSecret, Vec<T>)> =
+        HashMap::new();
     for recipient in recipients {
-        let key_material = recipient.into();
+        let key_material: SilentPaymentKeyMaterial = recipient.into();
 
         let recipient_scan_key = key_material.scan_key();
 
