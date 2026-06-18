@@ -9,7 +9,7 @@
 //! - **encode**: Enables string encoding/decoding for `SilentPaymentCode` (requires `bech32`)
 //! - **serde**: Enables serde serialization/deserialization for types
 //! - **sending**: Enables sending functionality (requires `bitcoin_hashes`, `hex`, and `encode`)
-//! - **receiving**: Enables receiving functionality (requires `bitcoin_hashes`, `hex`, `bimap`, `serde`, and `encode`)
+//! - **receiving**: Enables receiving functionality (requires `bitcoin_hashes`, `hex`, `serde`, and `encode`)
 //!
 //! ### Minimal Usage
 //!
@@ -52,13 +52,13 @@ pub use secp256k1;
 
 pub use crate::error::Error;
 pub use utils::common::Network;
-#[cfg(any(feature = "sending", feature = "receiving"))]
-pub use utils::common::SharedSecret;
 #[cfg(feature = "encode")]
 pub use utils::common::SilentPaymentCode;
 pub use utils::common::SilentPaymentKeyMaterial;
 pub use utils::common::SpVersion;
 #[cfg(any(feature = "sending", feature = "receiving"))]
 pub use utils::common::TransactionInputs;
+#[cfg(any(feature = "sending", feature = "receiving"))]
+pub use utils::common::TransactionSharedSecret;
 
 pub type Result<T> = std::result::Result<T, Error>;

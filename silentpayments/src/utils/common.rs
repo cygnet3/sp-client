@@ -2,19 +2,21 @@
 use core::fmt;
 
 #[cfg(any(feature = "sending", feature = "receiving"))]
-use crate::utils::script::is_eligible;
 use crate::Error;
 use crate::Result;
 #[cfg(any(feature = "sending", feature = "receiving"))]
-use crate::utils::hash::SharedSecretHash;
+use crate::utils::hash::calculate_shared_secret_hash;
+#[cfg(feature = "receiving")]
+use crate::utils::receiving::PublicTweakData;
+#[cfg(any(feature = "sending", feature = "receiving"))]
+use crate::utils::script::is_eligible;
 #[cfg(feature = "encode")]
 use bech32::{FromBase32, ToBase32};
-#[cfg(any(feature = "sending", feature = "receiving"))]
-use bitcoin_hashes::Hash;
 use secp256k1::PublicKey;
+#[cfg(any(feature = "sending", feature = "receiving"))]
 use secp256k1::constants::PUBLIC_KEY_SIZE;
 #[cfg(any(feature = "sending", feature = "receiving"))]
-use secp256k1::{Scalar, Secp256k1, SecretKey};
+use secp256k1::{Scalar, Secp256k1, SecretKey, ecdh::shared_secret_point};
 #[cfg(all(feature = "serde", feature = "encode"))]
 use serde::Deserializer;
 #[cfg(all(feature = "serde", feature = "encode"))]
@@ -114,7 +116,6 @@ impl TransactionInputs {
             input_pubkeys: Vec::new(),
         }
     }
-
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             outpoints: Vec::with_capacity(capacity),
@@ -182,13 +183,96 @@ impl TransactionInputs {
     }
 }
 
+/// Compute `private_key * public_key` as a secp256k1 [`PublicKey`].
+///
+/// # Arguments
+///
+/// * `public_key` - Either the recipient scan public key (sender) or the sum of all eligible inputs public keys (recipient).
+/// * `private_key` - Either one or all private keys used in the inputs of the transaction (sender) or the private scan key (recipient).
+///
+/// # Returns
+///
+/// The shared secret as a [`PublicKey`].
+///
+/// # Errors
+///
+/// This function will error if:
+///
+/// * The elliptic curve computation results in an invalid public key.
+///
+/// Uses `shared_secret_point` for constant-time scalar multiplication.
+#[cfg(any(feature = "sending", feature = "receiving"))]
+pub(crate) fn ecdh_multiply(public_key: &PublicKey, private_key: &SecretKey) -> Result<PublicKey> {
+    let mut ss_bytes = [0u8; 65];
+    ss_bytes[0] = 0x04;
+    ss_bytes[1..].copy_from_slice(&shared_secret_point(public_key, private_key));
+    Ok(PublicKey::from_slice(&ss_bytes)?)
+}
+
+/// Represents the shared secret, one for each scan key in the outputs, which is either obtained from
+/// * sum of all eligible inputs private keys multiplied with the input hash, multiplied with the scan public key, or
+/// * sum of all eligible inputs public keys multiplied with the input hash, multiplied with the scan private key
+/// Since sender and recipient are supposed to end up with the same shared secret, this is the final type used for both.
 #[cfg(any(feature = "sending", feature = "receiving"))]
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct SharedSecret(pub(crate) PublicKey);
+pub struct TransactionSharedSecret {
+    ecdh_shared_secret: PublicKey,
+    recipient_scan_key: PublicKey,
+}
+
+impl TransactionSharedSecret {
+    #[cfg(feature = "sending")]
+    pub(crate) fn from_sender_ecdh(
+        ecdh_shared_secret: PublicKey,
+        recipient_scan_key: PublicKey,
+    ) -> Self {
+        Self {
+            ecdh_shared_secret,
+            recipient_scan_key,
+        }
+    }
+
+    /// Calculate the shared secret of a transaction as a receiver.
+    ///
+    /// # Arguments
+    ///
+    /// * `tweak_data` - The tweak data of the transaction, see [`PublicTweakData::new`].
+    /// * `recipient_scan_key` - The scan private key used by the wallet.
+    ///
+    /// # Returns
+    ///
+    /// This function returns the shared secret of this transaction. This shared secret can be used to scan the transaction of outputs that are for the current user. See [`Receiver::scan_transaction`](crate::receiving::Receiver::scan_transaction).
+    #[cfg(feature = "receiving")]
+    pub fn new_from_public_tweak_data<C: secp256k1::Signing>(
+        secp: &Secp256k1<C>,
+        tweak_data: &PublicTweakData,
+        recipient_scan_key: &SecretKey,
+    ) -> Result<Self> {
+        Ok(Self {
+            ecdh_shared_secret: ecdh_multiply(tweak_data.as_inner(), recipient_scan_key)?,
+            recipient_scan_key: PublicKey::from_secret_key(&secp, recipient_scan_key),
+        })
+    }
+
+    pub fn as_ecdh_shared_secret(&self) -> &PublicKey {
+        &self.ecdh_shared_secret
+    }
+
+    pub fn into_ecdh_shared_secret(self) -> PublicKey {
+        self.ecdh_shared_secret
+    }
+
+    pub fn as_recipient_scan_key(&self) -> &PublicKey {
+        &self.recipient_scan_key
+    }
+}
 
 #[cfg(any(feature = "sending", feature = "receiving"))]
-pub(crate) fn calculate_t_n(ecdh_shared_secret: &SharedSecret, k: u32) -> Result<SecretKey> {
-    let hash = SharedSecretHash::from_ecdh_and_k(ecdh_shared_secret, k).to_byte_array();
+pub(crate) fn calculate_t_n(
+    ecdh_shared_secret: &TransactionSharedSecret,
+    k: u32,
+) -> Result<SecretKey> {
+    let hash = calculate_shared_secret_hash(ecdh_shared_secret, k);
     let sk = SecretKey::from_slice(&hash)?;
 
     Ok(sk)
