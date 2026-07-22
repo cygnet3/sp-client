@@ -20,6 +20,7 @@ rayon = { workspace = true, optional = true }
 log.workspace = true
 bdk_coin_select.workspace = true
 bip321.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
