@@ -12,6 +12,8 @@ use silentpayments::utils::sending::PartialSecret;
 
 use spdk_core::updater::DiscoveredOutput;
 
+use super::coin_select::Strategy;
+
 // re-export from bdk_coin_select, as we use this in the api
 pub use bdk_coin_select::FeeRate;
 
@@ -62,6 +64,13 @@ pub struct SilentPaymentUnsignedTransaction {
     pub partial_secret: PartialSecret,
     pub unsigned_tx: Option<Transaction>,
     pub network: Network,
+    /// Wallet change amount (zero for drain / changeless selections).
+    pub change: Amount,
+    /// Indices into `recipients` that are change outputs.
+    pub change_indexes: Vec<usize>,
+    pub fee: Amount,
+    pub actual_fee_rate: FeeRate,
+    pub strategy: Strategy,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
