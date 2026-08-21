@@ -259,8 +259,10 @@ impl<'de> Deserialize<'de> for Receiver {
     {
         let helper = ReceiverHelper::deserialize(deserializer)?;
         let version = helper.version.try_into().map_err(de::Error::custom)?;
-        let scan_pubkey = PublicKey::from_slice(&helper.scan_pubkey.0).map_err(de::Error::custom)?;
-        let spend_pubkey = PublicKey::from_slice(&helper.spend_pubkey.0).map_err(de::Error::custom)?;
+        let scan_pubkey =
+            PublicKey::from_slice(&helper.scan_pubkey.0).map_err(de::Error::custom)?;
+        let spend_pubkey =
+            PublicKey::from_slice(&helper.spend_pubkey.0).map_err(de::Error::custom)?;
         let change_label = Label::try_from(helper.change_label).map_err(de::Error::custom)?;
 
         // Route through the constructor so the change label is validated
@@ -276,7 +278,9 @@ impl<'de> Deserialize<'de> for Receiver {
         )
         .map_err(de::Error::custom)?;
         for label in helper.labels.0.values() {
-            receiver.add_label(label.clone()).map_err(de::Error::custom)?;
+            receiver
+                .add_label(label.clone())
+                .map_err(de::Error::custom)?;
         }
         Ok(receiver)
     }
