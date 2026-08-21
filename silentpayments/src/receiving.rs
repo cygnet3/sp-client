@@ -213,7 +213,8 @@ impl<'de> Deserialize<'de> for SerializableHashMap {
         let pairs: Vec<(SerializablePubkey, Label)> = Deserialize::deserialize(deserializer)?;
         let mut map: HashMap<PublicKey, Label> = HashMap::new();
         for (ser_pubkey, label) in pairs {
-            map.insert(PublicKey::from_slice(&ser_pubkey.0).unwrap(), label);
+            let pk = PublicKey::from_slice(&ser_pubkey.0).map_err(de::Error::custom)?;
+            map.insert(pk, label);
         }
         Ok(SerializableHashMap(map))
     }
@@ -258,11 +259,12 @@ impl<'de> Deserialize<'de> for Receiver {
     {
         let helper = ReceiverHelper::deserialize(deserializer)?;
         Ok(Receiver {
-            version: helper.version.try_into().unwrap(),
+            version: helper.version.try_into().map_err(de::Error::custom)?,
             network: helper.network,
-            scan_pubkey: PublicKey::from_slice(&helper.scan_pubkey.0).unwrap(),
-            spend_pubkey: PublicKey::from_slice(&helper.spend_pubkey.0).unwrap(),
-            change_label: Label::try_from(helper.change_label).unwrap(),
+            scan_pubkey: PublicKey::from_slice(&helper.scan_pubkey.0).map_err(de::Error::custom)?,
+            spend_pubkey: PublicKey::from_slice(&helper.spend_pubkey.0)
+                .map_err(de::Error::custom)?,
+            change_label: Label::try_from(helper.change_label).map_err(de::Error::custom)?,
             labels: helper.labels.0,
         })
     }
