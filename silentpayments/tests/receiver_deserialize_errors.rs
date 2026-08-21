@@ -1,5 +1,5 @@
 //! T3-01 regression: deserializing malformed Receiver JSON must return Err,
-//! never panic. Confirmed panics on receiving.rs:216,261,263,264,265 (2026-08-21).
+//! never panic.
 use silentpayments::receiving::{Label, Receiver};
 use silentpayments::secp256k1::{Secp256k1, SecretKey};
 use silentpayments::{Network, SpVersion};
@@ -58,6 +58,9 @@ fn malformed_change_label_returns_err() {
 #[test]
 fn malformed_labels_map_pubkey_returns_err() {
     let mut v = valid_receiver_value();
-    v["labels"] = serde_json::json!([[vec![199u8; 33], "aa".repeat(32)]]);
+    // Keep a valid label so the only malformed input is the 33-byte key:
+    // the failure must come from PublicKey::from_slice, not label parsing.
+    let valid_label = v["change_label"].as_str().unwrap().to_string();
+    v["labels"] = serde_json::json!([[vec![199u8; 33], valid_label]]);
     assert!(serde_json::from_str::<Receiver>(&v.to_string()).is_err());
 }

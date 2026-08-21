@@ -258,15 +258,27 @@ impl<'de> Deserialize<'de> for Receiver {
         D: serde::Deserializer<'de>,
     {
         let helper = ReceiverHelper::deserialize(deserializer)?;
-        Ok(Receiver {
-            version: helper.version.try_into().map_err(de::Error::custom)?,
-            network: helper.network,
-            scan_pubkey: PublicKey::from_slice(&helper.scan_pubkey.0).map_err(de::Error::custom)?,
-            spend_pubkey: PublicKey::from_slice(&helper.spend_pubkey.0)
-                .map_err(de::Error::custom)?,
-            change_label: Label::try_from(helper.change_label).map_err(de::Error::custom)?,
-            labels: helper.labels.0,
-        })
+        let version = helper.version.try_into().map_err(de::Error::custom)?;
+        let scan_pubkey = PublicKey::from_slice(&helper.scan_pubkey.0).map_err(de::Error::custom)?;
+        let spend_pubkey = PublicKey::from_slice(&helper.spend_pubkey.0).map_err(de::Error::custom)?;
+        let change_label = Label::try_from(helper.change_label).map_err(de::Error::custom)?;
+
+        // Route through the constructor so the change label is validated
+        // against the spend pubkey. Extra labels are validated the same way
+        // via add_label, which recomputes mG from the label, so crafted map
+        // keys in the JSON are never trusted.
+        let mut receiver = Receiver::new(
+            version,
+            scan_pubkey,
+            spend_pubkey,
+            change_label,
+            helper.network,
+        )
+        .map_err(de::Error::custom)?;
+        for label in helper.labels.0.values() {
+            receiver.add_label(label.clone()).map_err(de::Error::custom)?;
+        }
+        Ok(receiver)
     }
 }
 

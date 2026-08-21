@@ -10,7 +10,6 @@ pub enum Error {
     InvalidNetwork(String),
     Secp256k1Error(secp256k1::Error),
     OutOfRangeError(secp256k1::scalar::OutOfRangeError),
-    InvalidPublicKey(String),
     IOError(std::io::Error),
     EmptyArray,
 }
@@ -26,7 +25,6 @@ impl fmt::Display for Error {
             Error::InvalidNetwork(msg) => write!(f, "Invalid network: {}", msg),
             Error::Secp256k1Error(e) => e.fmt(f),
             Error::OutOfRangeError(e) => e.fmt(f),
-            Error::InvalidPublicKey(msg) => write!(f, "Invalid public key: {}", msg),
             Error::IOError(e) => e.fmt(f),
             Error::EmptyArray => write!(f, "Non-empty array required"),
         }
