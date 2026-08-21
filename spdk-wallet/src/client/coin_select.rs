@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 
 use anyhow::{Error, Result};
+use bdk_coin_select::float::Ordf32;
 use bdk_coin_select::metrics::{Changeless, LowestFee};
 use bdk_coin_select::{
-    Candidate, ChangePolicy, CoinSelector, DrainWeights, FeeRate,
+    BnbMetric, Candidate, ChangePolicy, CoinSelector, Drain, DrainWeights, FeeRate,
     TR_DUST_RELAY_MIN_VALUE, TR_KEYSPEND_SATISFACTION_WEIGHT, TR_KEYSPEND_TXIN_WEIGHT,
     TR_SPK_WEIGHT, TXOUT_BASE_WEIGHT, Target, TargetFee, TargetOutputs,
 };
@@ -14,7 +15,7 @@ use spdk_core::constants::DATA_CARRIER_SIZE;
 use crate::client::{Recipient, RecipientAddress};
 
 /// Upper bound on branch-and-bound iterations (see `bdk_coin_select` README).
-const BNB_MAX_ROUNDS: usize = 10_000;
+const BNB_MAX_ROUNDS: usize = 100_000;
 
 /// Compact-size item count + <sig> + <pubkey> in the witness (weight units).
 const P2WPKH_SATISFACTION_WEIGHT: u64 = 1 + (1 + 72) + (1 + 33);
@@ -25,8 +26,9 @@ const P2PKH_SATISFACTION_WEIGHT: u64 = (1 + 72 + 1 + 33) * 4;
 pub enum Strategy {
     Changeless,
     LowestFee,
-    Greedy, // Fallback
-    Drain,  // for the drain transaction case
+    FeeRateCap, // Only accepts selections whose implied fee rate stays within the bound, then minimize fees
+    Greedy,     // Fallback
+    Drain,      // for the drain transaction case
 }
 
 fn candidate_from_txout(txout: &TxOut) -> Result<Candidate> {
@@ -260,6 +262,91 @@ fn try_lowest_fee_selection(
     finalize_selection(ctx, &coin_selector, Strategy::LowestFee)
 }
 
+/// 1.0 = implied feerate must match the request (modulo vbyte rounding).
+const FEE_RATE_CAP_MAX_OVERSHOOT: f32 = 1.0;
+
+/// Only accepts selections whose implied fee rate stays within the bound;
+/// among those, minimizes fee (fewest/cheapest inputs).
+struct FeeRateCapMetric {
+    target: Target,
+    change_policy: ChangePolicy,
+    max_overshoot: f32,
+}
+
+impl FeeRateCapMetric {
+    fn drain_for(cs: &CoinSelector<'_>, target: Target, change_policy: ChangePolicy) -> Drain {
+        match cs.drain_value(target, change_policy) {
+            Some(value) => Drain {
+                weights: change_policy.drain_weights,
+                value,
+            },
+            None => Drain::NONE,
+        }
+    }
+
+    fn fee_within_cap(&self, cs: &CoinSelector<'_>) -> Option<i64> {
+        if !cs.is_target_met(self.target) {
+            return None;
+        }
+        let drain = Self::drain_for(cs, self.target, self.change_policy);
+        let fee = cs.fee(self.target.outputs.value_sum, drain.value);
+        if fee < 0 {
+            return None;
+        }
+        // Change (or zero leftover) makes fee equal implied_fee. Leftover dumped
+        // to miners raises fee above that; max_overshoot 1.0 rejects it.
+        // Compare fees, not float feerates: vbyte rounding already lives in
+        // implied_fee, so 1.0 stays exact modulo that ceil.
+        let max_fee =
+            (cs.implied_fee(self.target, drain.weights) as f32 * self.max_overshoot).ceil() as i64;
+        if fee > max_fee {
+            return None;
+        }
+        Some(fee)
+    }
+}
+
+impl BnbMetric for FeeRateCapMetric {
+    fn score(&mut self, cs: &CoinSelector<'_>) -> Option<Ordf32> {
+        self.fee_within_cap(cs).map(|fee| Ordf32(fee as f32))
+    }
+
+    fn bound(&mut self, cs: &CoinSelector<'_>) -> Option<Ordf32> {
+        if !cs.is_selection_possible(self.target) {
+            return None;
+        }
+        match self.score(cs) {
+            // Already in cap; adding inputs only raises fee.
+            Some(score) => Some(score),
+            None => Some(Ordf32(0.0)),
+        }
+    }
+
+    fn requires_ordering_by_descending_value_pwu(&self) -> bool {
+        true
+    }
+}
+
+fn try_fee_rate_cap_selection(
+    ctx: &SelectionContext<'_>,
+    mut coin_selector: CoinSelector<'_>,
+) -> Result<InputSelection> {
+    for (index, candidate) in ctx.candidates.iter().enumerate() {
+        if !coin_selector.is_selected(index) && candidate.effective_value(ctx.fee_rate) <= 0.0 {
+            coin_selector.ban(index);
+        }
+    }
+    coin_selector.run_bnb(
+        FeeRateCapMetric {
+            target: ctx.target,
+            change_policy: ctx.change_policy,
+            max_overshoot: FEE_RATE_CAP_MAX_OVERSHOOT,
+        },
+        BNB_MAX_ROUNDS,
+    )?;
+    finalize_selection(ctx, &coin_selector, Strategy::FeeRateCap)
+}
+
 fn try_greedy_selection(
     ctx: &SelectionContext<'_>,
     mut coin_selector: CoinSelector<'_>,
@@ -279,6 +366,7 @@ fn run_all_strategies(ctx: &SelectionContext<'_>) -> Vec<InputSelection> {
         try_changeless_selection
             as fn(&SelectionContext<'_>, CoinSelector<'_>) -> Result<InputSelection>,
         try_lowest_fee_selection,
+        try_fee_rate_cap_selection,
         try_greedy_selection,
     ];
 
@@ -290,7 +378,7 @@ fn run_all_strategies(ctx: &SelectionContext<'_>) -> Vec<InputSelection> {
 
 /// Run each coin-selection strategy independently on a fresh [`CoinSelector`] clone.
 ///
-/// Returns every strategy that found a valid selection (up to 3). Errors only when all
+/// Returns every strategy that found a valid selection (up to 4). Errors only when all
 /// strategies fail.
 pub fn pick_utxos_for_fee_rate(
     available_utxos: &[(OutPoint, TxOut)],
@@ -509,6 +597,10 @@ mod tests {
             .iter()
             .find(|selection| selection.strategy == strategy)
             .unwrap_or_else(|| panic!("missing {:?} selection", strategy))
+    }
+
+    fn dumps_leftover_to_fee(selection: &InputSelection, requested: FeeRate) -> bool {
+        selection.change == Amount::ZERO && selection.actual_fee_rate > requested
     }
 
     #[test]
@@ -748,6 +840,7 @@ mod tests {
                         selection.strategy == Strategy::Changeless
                             && selection.change == Amount::ZERO
                             && selection.selected_utxos == vec![utxo(value_sat, 0).0]
+                            && !dumps_leftover_to_fee(selection, fee_rate)
                     })
                 })
             })
@@ -765,6 +858,11 @@ mod tests {
 
         assert_eq!(selection.change, Amount::ZERO);
         assert_eq!(selection.selected_utxos, vec![utxo(exact_sat, 0).0]);
+
+        let cap = selection_by_strategy(&selections, Strategy::FeeRateCap);
+        assert_eq!(cap.change, Amount::ZERO);
+        assert_eq!(cap.selected_utxos, vec![utxo(exact_sat, 0).0]);
+        assert!(!dumps_leftover_to_fee(cap, fee_rate));
     }
 
     #[test]
@@ -947,12 +1045,108 @@ mod tests {
         assert!(
             selections
                 .iter()
+                .any(|selection| selection.strategy == Strategy::FeeRateCap)
+        );
+        assert!(
+            selections
+                .iter()
                 .any(|selection| selection.strategy == Strategy::Greedy)
         );
 
         for selection in &selections {
             assert_selection_balances(&utxos, selection, 50_000);
         }
+    }
+
+    fn single_input_overpay_sat(payment: &Recipient, fee_rate: FeeRate) -> u64 {
+        let payment_sat = payment.amount.to_sat();
+        (payment_sat..payment_sat + 5_000)
+            .find(|&value_sat| {
+                pick_utxos_for_fee_rate(
+                    &[utxo(value_sat, 0)],
+                    &[payment.clone()],
+                    test_change_outputs(),
+                    fee_rate,
+                    &[],
+                )
+                .ok()
+                .is_some_and(|selections| {
+                    selections.iter().any(|selection| {
+                        matches!(
+                            selection.strategy,
+                            Strategy::Changeless | Strategy::Greedy | Strategy::LowestFee
+                        ) && dumps_leftover_to_fee(selection, fee_rate)
+                    })
+                })
+            })
+            .expect("a single-input overpay fixture must exist")
+    }
+
+    /// A single input that funds the payment with leftover below the change
+    /// floor. Changeless dumps that leftover into the fee; FeeRateCap should
+    /// pull in another input so leftover becomes change.
+    #[test]
+    fn fee_rate_cap_creates_change_instead_of_overpaying() {
+        let fee_rate = test_fee_rate();
+        let payment = payment_recipient(50_000);
+        let overpay_sat = single_input_overpay_sat(&payment, fee_rate);
+
+        let extra = utxo(10_000, 1);
+        let pool = vec![utxo(overpay_sat, 0), extra.clone()];
+        let selections =
+            pick_utxos_for_fee_rate(&pool, &[payment], test_change_outputs(), fee_rate, &[])
+                .expect("selection");
+        let cap = selection_by_strategy(&selections, Strategy::FeeRateCap);
+
+        // LowestFee/Changeless/Greedy keep the cheaper single-input dump; only
+        // FeeRateCap should spend the extra input to stay at the requested rate.
+        for strategy in [Strategy::Changeless, Strategy::LowestFee, Strategy::Greedy] {
+            let overpay = selection_by_strategy(&selections, strategy);
+            assert!(
+                dumps_leftover_to_fee(overpay, fee_rate),
+                "{strategy:?} must still dump leftover on this pool"
+            );
+            assert!(!overpay.selected_utxos.contains(&extra.0));
+        }
+
+        assert!(cap.selected_utxos.contains(&extra.0));
+        assert!(!dumps_leftover_to_fee(cap, fee_rate));
+        // Extra is 10_000 sats; at 1 sat/vB the added input+change output is
+        // ~100 sats. If that extra were dumped to fee, change would sit at the
+        // dust floor and actual_fee_rate would jump by tens of sat/vB.
+        assert!(
+            cap.change >= extra.1.value - Amount::from_sat(1_000),
+            "extra input was selected but mostly overpaid as fee; change was {}",
+            cap.change,
+        );
+        assert!(cap.actual_fee_rate >= fee_rate);
+        assert!(
+            cap.actual_fee_rate.as_sat_vb()
+                <= fee_rate.as_sat_vb() * FEE_RATE_CAP_MAX_OVERSHOOT + 0.05,
+            "FeeRateCap implied {} sat/vB, cap is {} sat/vB",
+            cap.actual_fee_rate.as_sat_vb(),
+            fee_rate.as_sat_vb() * FEE_RATE_CAP_MAX_OVERSHOOT,
+        );
+        assert_selection_balances(&pool, cap, 50_000);
+    }
+
+    #[test]
+    fn fee_rate_cap_absent_when_change_is_impossible() {
+        let fee_rate = test_fee_rate();
+        let payment = payment_recipient(50_000);
+        let overpay_sat = single_input_overpay_sat(&payment, fee_rate);
+
+        let pool = vec![utxo(overpay_sat, 0)];
+        let selections =
+            pick_utxos_for_fee_rate(&pool, &[payment], test_change_outputs(), fee_rate, &[])
+                .expect("selection");
+
+        assert!(
+            selections
+                .iter()
+                .all(|selection| selection.strategy != Strategy::FeeRateCap)
+        );
+        assert!(!selections.is_empty());
     }
 
     #[test]
