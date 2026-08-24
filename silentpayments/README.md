@@ -32,11 +32,7 @@ This will only pull `secp256k1` as a dependency, giving you access to the core t
 
 ## Sending
 
-For sending to silent payment recipients, you can call the [`generate_recipient_pubkeys`](sending::generate_recipient_pubkeys) function.
-This function takes a list of silent payment recipients (as [`SilentPaymentKeyMaterial`]), as well as a [`PartialSecret`](utils::sending::PartialSecret).
-
-The [`PartialSecret`](utils::sending::PartialSecret) represents the sum of all input private keys multiplied with the input hash.
-To compute the [`PartialSecret`](utils::sending::PartialSecret), the [`calculate_partial_secret`](utils::sending::calculate_partial_secret) function can be used, although this requires exposing secret data to this library.
+For sending to silent payment recipients, build a `TransactionSharedSecret` per recipient scan key using `GlobalSenderEcdhShare` (single signer) or `PartialSenderEcdhShare` (collaborative), then call `sending::generate_recipient_pubkeys` with the recipient key material and the shared secrets map.
 
 ## Receiving
 

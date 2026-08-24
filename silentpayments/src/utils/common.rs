@@ -243,17 +243,6 @@ pub struct TransactionSharedSecret {
 }
 
 impl TransactionSharedSecret {
-    #[cfg(feature = "sending")]
-    pub(crate) fn from_sender_ecdh(
-        ecdh_shared_secret: PublicKey,
-        recipient_scan_key: PublicKey,
-    ) -> Self {
-        Self {
-            ecdh_shared_secret,
-            recipient_scan_key,
-        }
-    }
-
     /// Create a shared secret from a finalized global ECDH share (sender path).
     #[cfg(all(
         feature = "sending",

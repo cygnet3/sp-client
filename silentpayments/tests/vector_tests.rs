@@ -4,15 +4,19 @@ mod common;
 mod tests {
     use secp256k1::{Scalar, Secp256k1, SecretKey};
     use silentpayments::{
-        Network, SilentPaymentCode, TransactionInputs, TransactionSharedSecret,
+        Network, NonEmptyArray, SilentPaymentCode, TransactionInputs, TransactionSharedSecret,
         receiving::Label,
         utils::{
             OutPoint,
             receiving::{PublicTweakData, get_pubkey_from_input, is_p2tr},
-            sending::calculate_partial_secret,
+            sending::{GlobalSenderEcdhShare, NormalizedSecretKey},
         },
     };
-    use std::{collections::HashSet, io::Cursor, str::FromStr};
+    use std::{
+        collections::{HashMap, HashSet},
+        io::Cursor,
+        str::FromStr,
+    };
 
     use silentpayments::receiving::Receiver;
 
@@ -46,25 +50,28 @@ mod tests {
         for sendingtest in test_case.sending {
             let given = sendingtest.given;
             let expected = sendingtest.expected;
-            let outpoints: Vec<OutPoint> = given
-                .vin
-                .iter()
-                .map(|vin| OutPoint::from_txid_and_vout(vin.txid.clone(), vin.vout).unwrap())
-                .collect();
             let mut input_priv_keys = Vec::new();
-            for input in given.vin {
+            let mut inputs = TransactionInputs::new();
+            for input in &given.vin {
                 let script_sig = hex::decode(&input.scriptSig).unwrap();
                 let txinwitness_bytes = hex::decode(&input.txinwitness).unwrap();
                 let mut cursor = Cursor::new(&txinwitness_bytes);
                 let txinwitness = deser_string_vector(&mut cursor).unwrap();
                 let script_pub_key = hex::decode(&input.prevout.scriptPubKey.hex).unwrap();
+                let outpoint =
+                    OutPoint::from_txid_and_vout(input.txid.clone(), input.vout).unwrap();
 
                 match get_pubkey_from_input(&script_sig, &txinwitness, &script_pub_key) {
-                    Ok(Some(_pubkey)) => input_priv_keys.push((
-                        SecretKey::from_str(&input.private_key).unwrap(),
-                        is_p2tr(&script_pub_key),
-                    )),
-                    Ok(None) => (),
+                    Ok(Some(pubkey)) => {
+                        input_priv_keys.push((
+                            SecretKey::from_str(&input.private_key).unwrap(),
+                            is_p2tr(&script_pub_key),
+                        ));
+                        inputs.push(outpoint, script_pub_key, Some(pubkey));
+                    }
+                    Ok(None) => {
+                        inputs.push(outpoint, script_pub_key, None);
+                    }
                     Err(e) => panic!("Problem parsing the input: {:?}", e),
                 }
             }
@@ -76,8 +83,35 @@ mod tests {
             // the wallet should make sure the amount sent are correct
             let silent_payment_codes = decode_recipients(&given.recipients);
 
-            let partial_secret = calculate_partial_secret(&input_priv_keys, &outpoints).unwrap();
-            let outputs = generate_recipient_pubkeys(silent_payment_codes, partial_secret).unwrap();
+            let input_priv_keys_normalized: Vec<NormalizedSecretKey> = input_priv_keys
+                .into_iter()
+                .map(|(key, is_taproot)| NormalizedSecretKey::new(&secp, key, is_taproot))
+                .collect();
+
+            let aux_rand = [0u8; 32];
+
+            let mut shared_secrets = HashMap::new();
+            for payment_code in &silent_payment_codes {
+                let recipient_scan_key = payment_code.scan_key();
+                if shared_secrets.contains_key(&recipient_scan_key) {
+                    continue;
+                }
+                let global_share = GlobalSenderEcdhShare::new_from_summed_keys(
+                    &secp,
+                    recipient_scan_key,
+                    NonEmptyArray::new(&input_priv_keys_normalized).unwrap(),
+                    &aux_rand,
+                )
+                .unwrap();
+                shared_secrets.insert(
+                    recipient_scan_key,
+                    TransactionSharedSecret::new_from_global_share(&secp, &global_share, &inputs)
+                        .unwrap(),
+                );
+            }
+
+            let outputs =
+                generate_recipient_pubkeys(&secp, &silent_payment_codes, &shared_secrets).unwrap();
 
             for output_pubkeys in &outputs {
                 for pubkey in output_pubkeys.1 {
