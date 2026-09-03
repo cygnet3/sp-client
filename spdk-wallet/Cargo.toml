@@ -10,6 +10,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 [dependencies]
 spdk-core.workspace = true
 backend-blindbit-v1 = { workspace = true, optional = true }
+backend-frigate = { workspace = true, optional = true }
 
 anyhow.workspace = true
 bitcoin.workspace = true
@@ -28,3 +29,4 @@ serde_json.workspace = true
 
 [features]
 default = ["backend-blindbit-v1", "rayon"]
+backend-frigate = ["dep:backend-frigate"]
