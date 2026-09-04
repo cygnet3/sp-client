@@ -16,9 +16,9 @@ use bitcoin::transaction::Version;
 use bitcoin::{
     Amount, Network, OutPoint, ScriptBuf, Sequence, TapLeafHash, Transaction, TxIn, TxOut, Witness,
 };
-use silentpayments::utils as sp_utils;
+use silentpayments::Network as SpNetwork;
 use silentpayments::utils::sending::PartialSecret;
-use silentpayments::{Network as SpNetwork, SilentPaymentKeyMaterial};
+use silentpayments::{SilentPaymentCode, utils as sp_utils};
 
 use spdk_core::constants::{DATA_CARRIER_SIZE, NUMS};
 use spdk_core::updater::DiscoveredOutput;
@@ -265,17 +265,17 @@ impl SpClient {
             })
             .collect();
 
-        let sp_key_material: Vec<SilentPaymentKeyMaterial> = unsigned_transaction
+        let recipient_codes: Vec<SilentPaymentCode> = unsigned_transaction
             .recipients
             .iter()
             .filter_map(|r| match &r.address {
-                RecipientAddress::SpCode(sp_code) => Some(SilentPaymentKeyMaterial::from(*sp_code)),
+                RecipientAddress::SpCode(sp_code) => Some(*sp_code),
                 _ => None,
             })
             .collect();
 
         let sp_key_material2xonlypubkeys = silentpayments::sending::generate_recipient_pubkeys(
-            sp_key_material,
+            recipient_codes,
             unsigned_transaction.partial_secret,
         )?;
 
@@ -286,7 +286,7 @@ impl SpClient {
                 RecipientAddress::SpCode(sp_code) => {
                     // We now need to fill the sp outputs with actual spk
                     let pubkeys = sp_key_material2xonlypubkeys
-                        .get(&SilentPaymentKeyMaterial::from(*sp_code))
+                        .get(sp_code)
                         .ok_or(Error::msg("Unknown silent payment key material"))?;
 
                     // we currently only allow having 1 output per silent payment key material
