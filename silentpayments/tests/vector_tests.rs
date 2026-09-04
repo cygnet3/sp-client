@@ -76,12 +76,12 @@ mod tests {
 
             // we drop the amounts from the test here, since we don't work with amounts
             // the wallet should make sure the amount sent are correct
-            let silent_key_material = decode_recipients(&given.recipients);
+            let silent_payment_codes = decode_recipients(&given.recipients);
 
             // as an alternative, we could first multiply each input priv key with the input hash
             // that way, we never expose the sk to our library
             let partial_secret = calculate_partial_secret(&input_priv_keys, &outpoints).unwrap();
-            let outputs = generate_recipient_pubkeys(silent_key_material, partial_secret).unwrap();
+            let outputs = generate_recipient_pubkeys(silent_payment_codes, partial_secret).unwrap();
 
             for output_pubkeys in &outputs {
                 for pubkey in output_pubkeys.1 {
