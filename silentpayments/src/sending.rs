@@ -26,55 +26,59 @@ use crate::utils::sending::calculate_ecdh_shared_secret;
 ///
 /// # Arguments
 ///
-/// * `recipients` - A [Vec] of [`SilentPaymentKeyMaterial`] to be paid.
+/// * `recipients` - An iterable list of recipients to be paid. List can contain either [SilentPaymentKeyMaterial] or [crate::SilentPaymentCode].
 /// * `partial_secret` - [PartialSecret] that represents the sum of the private keys of eligible inputs of the transaction multiplied by the input hash.
 ///
 /// # Returns
 ///
-/// If successful, the function returns a [Result] wrapping a [HashMap] of [`SilentPaymentKeyMaterial`] to a [Vec].
-/// The [Vec] contains all the outputs that are associated with that recipient's key material.
+/// If successful, the function returns a [Result] wrapping a [HashMap] of each recipient item to a [Vec].
+/// The [Vec] contains all the outputs that are associated with that recipient.
+/// If the same recipient was added multiple times, this [Vec] will contain multiple elements.
 ///
 /// # Errors
 ///
 /// This function will return an error if:
 ///
 /// * Edge cases are hit during elliptic curve computation (extremely unlikely).
-pub fn generate_recipient_pubkeys(
-    recipients: Vec<SilentPaymentKeyMaterial>,
+pub fn generate_recipient_pubkeys<T, I>(
+    recipients: I,
     partial_secret: PartialSecret,
-) -> Result<HashMap<SilentPaymentKeyMaterial, Vec<XOnlyPublicKey>>> {
+) -> Result<HashMap<T, Vec<XOnlyPublicKey>>>
+where
+    T: Into<SilentPaymentKeyMaterial> + Eq + std::hash::Hash + Clone + Copy,
+    I: IntoIterator<Item = T>,
+{
     let secp = Secp256k1::new();
 
-    let mut silent_payment_groups: HashMap<
-        PublicKey,
-        (SharedSecret, Vec<SilentPaymentKeyMaterial>),
-    > = HashMap::new();
-    for key_material in recipients {
+    let mut silent_payment_groups: HashMap<PublicKey, (SharedSecret, Vec<T>)> = HashMap::new();
+    for recipient in recipients {
+        let key_material = recipient.into();
+
         let recipient_scan_key = key_material.scan_key();
 
         if let Some((_, payments)) = silent_payment_groups.get_mut(&recipient_scan_key) {
-            payments.push(key_material);
+            payments.push(recipient);
         } else {
             let ecdh_shared_secret =
                 calculate_ecdh_shared_secret(&recipient_scan_key, &partial_secret);
 
-            silent_payment_groups
-                .insert(recipient_scan_key, (ecdh_shared_secret, vec![key_material]));
+            silent_payment_groups.insert(recipient_scan_key, (ecdh_shared_secret, vec![recipient]));
         }
     }
 
-    let mut result: HashMap<SilentPaymentKeyMaterial, Vec<XOnlyPublicKey>> = HashMap::new();
+    let mut result: HashMap<T, Vec<XOnlyPublicKey>> = HashMap::new();
     for group in silent_payment_groups.into_values() {
         let (ecdh_shared_secret, recipients) = group;
 
-        for (n, key_material) in recipients.into_iter().enumerate() {
+        for (n, recipient) in recipients.into_iter().enumerate() {
+            let recipient_key_material = recipient.into();
             let t_n = calculate_t_n(&ecdh_shared_secret, n as u32)?;
 
             let res = t_n.public_key(&secp);
-            let reskey = res.combine(&key_material.m_pubkey())?;
+            let reskey = res.combine(&recipient_key_material.m_pubkey())?;
             let (reskey_xonly, _) = reskey.x_only_public_key();
 
-            let entry = result.entry(key_material).or_default();
+            let entry = result.entry(recipient).or_default();
             entry.push(reskey_xonly);
         }
     }
