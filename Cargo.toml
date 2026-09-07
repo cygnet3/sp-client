@@ -16,7 +16,7 @@ serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"
 bip321 = { git="https://gitlab.com/Sosthene00/bark.git", rev="83ab79264159869503b16fa475e0ed61ffa33174", default-features = false }
 bitcoin = { version = "0.32.102", features = ["serde", "rand", "base64"] }
-bitcoin_hashes = "0.13.0"
+bitcoin_hashes = "0.14"
 rayon = "1.10.0"
 futures = "0.3"
 async-trait = "0.1"
