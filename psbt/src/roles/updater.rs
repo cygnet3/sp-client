@@ -2,7 +2,7 @@ use bitcoin::{
     bip32::{DerivationPath, Fingerprint},
     CompressedPublicKey,
 };
-use psbt_v2::v2::Input;
+use psbt_v2::Input;
 use secp256k1::PublicKey;
 
 pub trait Bip375UpdaterExt {

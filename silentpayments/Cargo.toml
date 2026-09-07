@@ -34,7 +34,7 @@ rust-dleq = { workspace = true, optional = true }
 
 [dev-dependencies]
 rust-bip39 = { version = "1.0.0", features = ["rand"] }
-bitcoin = { version = "0.32.8", features = ["serde"] }
+bitcoin = { version = "0.32.102", features = ["serde"] }
 serde_json = "1.0"
 
 [[example]]
