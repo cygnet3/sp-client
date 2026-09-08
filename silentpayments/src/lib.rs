@@ -58,5 +58,7 @@ pub use utils::common::SharedSecret;
 pub use utils::common::SilentPaymentCode;
 pub use utils::common::SilentPaymentKeyMaterial;
 pub use utils::common::SpVersion;
+#[cfg(any(feature = "sending", feature = "receiving"))]
+pub use utils::common::TransactionInputs;
 
 pub type Result<T> = std::result::Result<T, Error>;

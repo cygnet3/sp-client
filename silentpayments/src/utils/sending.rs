@@ -50,7 +50,7 @@ pub fn calculate_partial_secret(
     let A_sum = a_sum.public_key(&secp);
 
     let outpoints = NonEmptyArray::new(outpoints_data)?;
-    let input_hash = calculate_input_hash(outpoints, A_sum);
+    let input_hash = calculate_input_hash(outpoints.min(), A_sum);
 
     Ok(PartialSecret(a_sum.mul_tweak(&input_hash)?))
 }
