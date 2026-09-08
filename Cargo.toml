@@ -1,5 +1,5 @@
 [workspace]
-members = ["spdk-core", "backend-blindbit-v1", "spdk-wallet", "silentpayments"]
+members = ["spdk-core", "backend-blindbit-v1", "spdk-wallet", "silentpayments", "psbt"]
 resolver = "3"
 
 [workspace.dependencies]
@@ -7,6 +7,7 @@ resolver = "3"
 spdk-core = { path = "spdk-core" }
 silentpayments = { path = "silentpayments" }
 backend-blindbit-v1 = { path = "backend-blindbit-v1"}
+psbt = { path = "psbt" }
 
 # Core dependencies - shared across crates
 anyhow = "1.0"
@@ -21,12 +22,15 @@ futures = "0.3"
 async-trait = "0.1"
 log = "0.4"
 hex = { version = "0.4.3", features = ["serde"] }
+hmac = "0.12"
+sha2 = "0.10"
 bdk_coin_select = "0.4.0"
 reqwest = { version = "0.12.4", features = [
   "json",
   "rustls-tls",
   "gzip",
 ], default-features = false }
+psbt-v2 = { git = "https://gitea.bitcoin.ninja/sosthene/rust-psbt.git", rev = "ace5d5bd8307ce93c81dd2a606dcb8cc9aaa1a85", features = ["silent-payments", "miniscript"] }
 rust-dleq = { git = "https://github.com/Sosthene00/rust-dleq.git", rev = "097644a14d87c454e9bd9895de2e60992ff1ba93", default-features = false }
 secp256k1 = { version = "0.29.0" }
 rand = "0.8"
