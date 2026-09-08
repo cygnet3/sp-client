@@ -31,6 +31,19 @@ reqwest = { version = "0.12.4", features = [
   "gzip",
 ], default-features = false }
 psbt-v2 = { git = "https://gitea.bitcoin.ninja/sosthene/rust-psbt.git", rev = "a5b53a8a650b99602db9a81c5afc1ad4635e812f", features = ["silent-payments", "miniscript"] }
+# DLEQ (BIP-374) backend decision (2026-09):
+# We use rust-dleq's pure-Rust `standalone` backend (the default in `silentpayments`
+# and `psbt`), pinned to this fork. It is verified against the official BIP-374
+# test vectors (byte-identical proofs; all negative cases reject).
+#
+# The `dleq-native` path (vendored libsecp256k1) is deferred: it builds its own
+# libsecp256k1.a alongside secp256k1-sys's, and unifying them would mean forking
+# rust-secp256k1 and hand-porting its context/memory patches onto the moving
+# libsecp PR #1802 branch — not worth it for a stopgap.
+#
+# Revisit when secp256k1 PR #1802 (or #1651) merges and rust-secp256k1 ships the
+# DLEQ module. Also watch bips#2262 (challenge `e` as scalar) — if it lands, both
+# the C and standalone impls plus the test vectors change.
 rust-dleq = { git = "https://github.com/Sosthene00/rust-dleq.git", rev = "097644a14d87c454e9bd9895de2e60992ff1ba93", default-features = false }
 secp256k1 = { version = "0.29.0" }
 rand = "0.8"
