@@ -2,15 +2,13 @@
 mod common;
 #[cfg(test)]
 mod tests {
-    use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
+    use secp256k1::{Scalar, Secp256k1, SecretKey};
     use silentpayments::{
-        Network, SilentPaymentCode,
+        Network, SilentPaymentCode, TransactionInputs, TransactionSharedSecret,
         receiving::Label,
         utils::{
             OutPoint,
-            receiving::{
-                calculate_ecdh_shared_secret, calculate_tweak_data, get_pubkey_from_input, is_p2tr,
-            },
+            receiving::{PublicTweakData, get_pubkey_from_input, is_p2tr},
             sending::calculate_partial_secret,
         },
     };
@@ -78,8 +76,6 @@ mod tests {
             // the wallet should make sure the amount sent are correct
             let silent_key_material = decode_recipients(&given.recipients);
 
-            // as an alternative, we could first multiply each input priv key with the input hash
-            // that way, we never expose the sk to our library
             let partial_secret = calculate_partial_secret(&input_priv_keys, &outpoints).unwrap();
             let outputs = generate_recipient_pubkeys(silent_key_material, partial_secret).unwrap();
 
@@ -116,30 +112,29 @@ mod tests {
 
             let outputs_to_check = decode_outputs_to_check(&given.outputs);
 
-            let outpoints: Vec<OutPoint> = given
-                .vin
-                .iter()
-                .map(|vin| OutPoint::from_txid_and_vout(vin.txid.clone(), vin.vout).unwrap())
-                .collect();
-            let mut input_pub_keys = Vec::new();
+            let mut inputs = TransactionInputs::new();
             for input in given.vin {
                 let script_sig = hex::decode(&input.scriptSig).unwrap();
                 let txinwitness_bytes = hex::decode(&input.txinwitness).unwrap();
                 let mut cursor = Cursor::new(&txinwitness_bytes);
                 let txinwitness = deser_string_vector(&mut cursor).unwrap();
                 let script_pub_key = hex::decode(&input.prevout.scriptPubKey.hex).unwrap();
+                let outpoint =
+                    OutPoint::from_txid_and_vout(input.txid.clone(), input.vout).unwrap();
 
                 match get_pubkey_from_input(&script_sig, &txinwitness, &script_pub_key) {
-                    Ok(Some(pubkey)) => input_pub_keys.push(pubkey),
-                    Ok(None) => (),
+                    Ok(Some(pubkey)) => {
+                        inputs.push(outpoint, script_pub_key, Some(pubkey));
+                    }
+                    Ok(None) => {
+                        inputs.push(outpoint, script_pub_key, None);
+                    }
                     Err(e) => panic!("Problem parsing the input: {:?}", e),
                 }
             }
-            if input_pub_keys.is_empty() {
+            if inputs.input_pubkeys().iter().all(|pk| pk.is_none()) {
                 continue;
-            };
-
-            let input_pub_keys: Vec<&PublicKey> = input_pub_keys.iter().collect();
+            }
 
             for label_int in &given.labels {
                 let label = Label::new(b_scan, *label_int);
@@ -166,8 +161,10 @@ mod tests {
             // to the expected codes
             assert_eq!(receiving_codes, expected_codes);
 
-            let tweak_data = calculate_tweak_data(&input_pub_keys, &outpoints).unwrap();
-            let ecdh_shared_secret = calculate_ecdh_shared_secret(&tweak_data, &b_scan);
+            let tweak_data = PublicTweakData::new(&secp, &inputs).unwrap();
+            let ecdh_shared_secret =
+                TransactionSharedSecret::new_from_public_tweak_data(&secp, &tweak_data, &b_scan)
+                    .unwrap();
 
             let scanned_outputs_received = sp_receiver
                 .scan_transaction(&ecdh_shared_secret, &outputs_to_check)
