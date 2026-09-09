@@ -4,104 +4,74 @@ A rust implementation of BIP352: Silent Payments.
 
 ## About
 
-**Warning: both this crate and BIP352 are still quite new.
-Review this library carefully before using it with mainnet funds.**
-
 This library supports creating and sending to silent payment codes,
 building on [`secp256k1`](https://docs.rs/secp256k1/latest/secp256k1)
 `PublicKey` and `SecretKey` structs for the interface.
 In the future, the library will probably be expanded to rely on structs from rust-bitcoin as well.
 
-The library is split up in two parts: sending and receiving.
-
-
-<details>
-
-<summary>Changelog</summary>
-
-### v0.7.0
-
-- Add public constants for scan / spend key paths
-- Rename getters: drop `get-` prefixes
-- Split `SilentPaymentAddress` into 2 separate structs: `SilentPaymentCode` and `SilentPaymentKeyMaterial`. `SilentPaymentCode` represents the encodable silent payment address, the key material struct is used for performing the bip352-related calculations.
-
-</details>
-
 ## Feature Flags
 
-This library offers granular feature flags to minimize dependencies for different use cases:
+This library offers granular feature flags to minimize dependencies:
 
 - **default**: Enables all features (`encode`, `sending`, `receiving`)
-- **encode**: Enables string encoding/decoding for `SilentPaymentCode` (adds `bech32` dependency)
-- **serde**: Enables serde serialization/deserialization for types (adds `serde` dependency)
-- **sending**: Enables sending functionality (adds `bitcoin_hashes`, `hex` dependencies)
-- **receiving**: Enables receiving functionality (adds `bitcoin_hashes`, `hex`, `bimap`, `serde` dependencies)
+- **encode**: Enables string encoding/decoding for `SilentPaymentCode` (requires `bech32`)
+- **serde**: Enables serde serialization/deserialization for types
+- **sending**: Enables sending functionality (requires `bitcoin_hashes`, `hex` and `encode`)
+- **receiving**: Enables receiving functionality (requires `bitcoin_hashes`, `hex`,`serde` and `encode`)
 
 ### Minimal Usage
 
-If you only need the type definitions (`Network` and `SilentPaymentKeyMaterial`) without any protocol functionality:
+If you only need the type definitions ([`Network`] and [`SilentPaymentKeyMaterial`]) without any protocol functionality, you can disable all default features:
 
 ```toml
 [dependencies]
-silentpayments = { version = "0.4", default-features = false }
+silentpayments = { version = "0.7", default-features = false }
 ```
 
-This configuration only pulls in `secp256k1` as a dependency, significantly reducing the dependency tree for applications that only need to work with silent payment key material without implementing the full protocol.
-
-**Bring Your Own Parser**: Even without the `encode` feature, you can construct a `SilentPaymentKeyMaterial` using `SilentPaymentKeyMaterial::new()` from pubkeys you parsed yourself. With `encode`, use `SilentPaymentCode` for bech32m strings; see `SilentPaymentCode::new` for the on-wire format if you parse bech32 yourself.
-
-### Custom Feature Combinations
-
-You can enable only the features you need:
-
-```toml
-# Just types and string encoding (no protocol implementation)
-silentpayments = { version = "0.4", default-features = false, features = ["encode"] }
-
-# Types with serde support (no protocol or encoding)
-silentpayments = { version = "0.4", default-features = false, features = ["serde"] }
-
-# Only sending capability
-silentpayments = { version = "0.4", default-features = false, features = ["sending"] }
-
-# Only receiving capability
-silentpayments = { version = "0.4", default-features = false, features = ["receiving"] }
-```
+This will only pull `secp256k1` as a dependency, giving you access to the core types without any encoding, serialization, or protocol functionality.
 
 ## Sending
 
-For sending to silent payment recipients, you can call the `sender::generate_recipient_pubkeys` function.
-This function takes a list of silent payment recipients (as `SilentPaymentKeyMaterial`), as well as a `partial_secret`.
+For sending to silent payment recipients, you can call the [`generate_recipient_pubkeys`](sending::generate_recipient_pubkeys) function.
+This function takes a list of silent payment recipients (as [`SilentPaymentKeyMaterial`]), as well as a [`PartialSecret`](utils::sending::PartialSecret).
 
-The `partial_secret` represents the sum of all input private keys multiplied with the input hash.
-To compute the `partial_secret`, the `utils::sending::compute_partial_secret` function can be used,
-although this requires exposing secret data to this library.
-Other methods for calculating the `partial_secret` will be added later.
+The [`PartialSecret`](utils::sending::PartialSecret) represents the sum of all input private keys multiplied with the input hash.
+To compute the [`PartialSecret`](utils::sending::PartialSecret), the [`calculate_partial_secret`](utils::sending::calculate_partial_secret) function can be used, although this requires exposing secret data to this library.
 
-## Recipient
+## Receiving
 
-For receiving silent payments, we use the `receiving::Receiver` struct.
-This `Receiver` struct implements a `scan_transaction` function that can be used to scan an incoming transaction for newly received payments.
+For receiving silent payments, we use the [`Receiver`](`receiving::Receiver`) struct.
+This [`Receiver`](receiving::Receiver) implements a [`scan_transaction`](receiving::Receiver::scan_transaction) function that can be used to scan an incoming transaction for newly received payments.
 
 The library also supports labels.
 The change label (label for generating change codes) is included by default.
-You can add additional labels before scanning by using the `add_label` function.
+You can add additional labels before scanning by using the [`add_label`](receiving::Receiver::add_label) function.
 
 ## Examples
 
 Check out the `examples` folder for some simple sending and receiving examples.
-These examples are still very elementary, and will be expanded later.
-In the meantime, you can look at `tests/vector_tests.rs` to see how sending and receiving works in more detail.
 
-We are also working on another project called [SPDK](https://github.com/cygnet3/spdk)
-(Silent Payments Development Kit) which builds on this library.
-SPDK can be used as a basis for building a silent payments wallet.
-It allows for scanning for incoming payments, as well as sending.
-Even if SPDK itself doesn't seem interesting to you, it could still be a good resource
-for showing how this library can be integrated with wallets.
+For a more realistic example, we recommend having a look at `spdk-wallet`.
+This library is part of a monorepo called [SPDK](https://github.com/cygnet3/spdk) (Silent Payments Development Kit).
+`spdk-wallet` builds on top of this library to perform wallet-related operations such as scanning for incoming payments and constructing and signing outgoing transactions.
+`spdk-wallet` might therefore be a good reference for how this library can be used to integrate silent payments into existing wallets.
 
 ## Tests
 
 The `tests/resources` folder contains a copy of the test vectors as of May 1st 2024.
 
 You can test the code using the test vectors by running `cargo test`.
+
+## Changelog
+
+<details>
+
+<summary>Expand</summary>
+
+### v0.7.0
+
+- Add public constants for scan / spend key paths
+- Rename getters: drop `get-` prefixes
+- Split `SilentPaymentAddress` into 2 separate structs: [`SilentPaymentCode`] and [`SilentPaymentKeyMaterial`]. [`SilentPaymentCode`] represents the encodable silent payment address, the key material struct is used for performing the bip352-related calculations.
+
+</details>
