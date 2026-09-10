@@ -45,3 +45,7 @@ required-features = ["receiving"]
 [[test]]
 name = "vector_tests"
 required-features = ["receiving", "sending"]
+
+[[test]]
+name = "receiver_deserialize_errors"
+required-features = ["receiving"]
