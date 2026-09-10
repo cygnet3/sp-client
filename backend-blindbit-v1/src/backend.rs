@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use bitcoin::{Amount, absolute::Height};
 use futures::{Stream, StreamExt, stream};
 
-use spdk_core::chain::{BlockData, ChainBackend, SpentIndexData, UtxoData};
+use spdk_core::chain::{BoxedBlockData, ChainBackend, SpentIndexData, UtxoData};
 
-use crate::BlindbitClient;
+use crate::{BlindbitClient, structs::BlindbitV1BlockData};
 
 const CONCURRENT_FILTER_REQUESTS: usize = 200;
 
@@ -33,7 +33,7 @@ impl ChainBackend for BlindbitBackend {
         range: RangeInclusive<Height>,
         dust_limit: Amount,
         with_cutthrough: bool,
-    ) -> Pin<Box<dyn Stream<Item = Result<BlockData>> + Send>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<BoxedBlockData>> + Send>> {
         let client = self.client.clone();
 
         // convert range to u32 since Height does not implement Step
@@ -52,13 +52,13 @@ impl ChainBackend for BlindbitBackend {
                     let new_utxo_filter = client.filter_new_utxos(blkheight).await?;
                     let spent_filter = client.filter_spent(blkheight).await?;
                     let blkhash = new_utxo_filter.block_hash;
-                    Ok(BlockData {
+                    Ok(Box::new(BlindbitV1BlockData {
                         blkheight,
                         blkhash,
                         tweaks,
                         new_utxo_filter: new_utxo_filter.into(),
                         spent_filter: spent_filter.into(),
-                    })
+                    }) as BoxedBlockData)
                 }
             })
             .buffered(CONCURRENT_FILTER_REQUESTS);

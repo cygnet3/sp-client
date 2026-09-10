@@ -1,12 +1,15 @@
 use anyhow::Result;
-use backend_blindbit_v1::api_structs::{FilterResponse, SpentIndexResponse, UtxoResponse};
+use backend_blindbit_v1::{
+    api_structs::{FilterResponse, SpentIndexResponse, UtxoResponse},
+    structs::BlindbitV1BlockData,
+};
 use std::{fs::File, ops::RangeInclusive, pin::Pin};
 
 use async_trait::async_trait;
 use bitcoin::{Amount, absolute::Height, secp256k1::PublicKey};
 use futures::{Stream, stream};
 
-use spdk_core::chain::{BlockData, ChainBackend, SpentIndexData, UtxoData};
+use spdk_core::chain::{BoxedBlockData, ChainBackend, SpentIndexData, UtxoData};
 
 const BLOCK_DATA_PATH: &str = "tests/resources/blocks";
 
@@ -19,7 +22,7 @@ impl ChainBackend for MockChainBackend {
         range: RangeInclusive<Height>,
         _dust_limit: Amount,
         _with_cutthrough: bool,
-    ) -> Pin<Box<dyn Stream<Item = Result<BlockData>> + Send>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<BoxedBlockData>> + Send>> {
         let range = range.start().to_consensus_u32()..=range.end().to_consensus_u32();
 
         let values = range.map(move |n| {
@@ -35,13 +38,13 @@ impl ChainBackend for MockChainBackend {
             let blkhash = new_utxo_filter.block_hash;
             let blkheight = new_utxo_filter.block_height;
 
-            Ok(BlockData {
+            Ok(Box::new(BlindbitV1BlockData {
                 blkheight,
                 blkhash,
                 tweaks,
                 new_utxo_filter: new_utxo_filter.into(),
                 spent_filter: spent_filter.into(),
-            })
+            }) as BoxedBlockData)
         });
 
         let stream = stream::iter(values);

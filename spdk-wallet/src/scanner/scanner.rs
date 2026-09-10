@@ -6,18 +6,12 @@ use std::{
 };
 
 use anyhow::{Error, Result};
-use bitcoin::{
-    Amount, BlockHash, OutPoint, Txid, XOnlyPublicKey,
-    absolute::Height,
-    bip158::BlockFilter,
-    hashes::{Hash, sha256},
-    secp256k1::{PublicKey, Scalar},
-};
+use bitcoin::{Amount, OutPoint, Txid, XOnlyPublicKey, absolute::Height, secp256k1::Scalar};
 use futures::{Stream, StreamExt, pin_mut};
 use log::info;
 use silentpayments::{SharedSecret, receiving::Label};
 
-use spdk_core::chain::{BlockData, ChainBackend, FilterData, UtxoData};
+use spdk_core::chain::{BoxedBlockData, ChainBackend, UtxoData};
 use spdk_core::updater::{DiscoveredOutput, Updater};
 
 use crate::client::SpClient;
@@ -79,7 +73,7 @@ impl<'a> SpScanner<'a> {
 
     async fn process_blocks(
         &mut self,
-        block_data_stream: impl Stream<Item = Result<BlockData>>,
+        block_data_stream: impl Stream<Item = Result<BoxedBlockData>>,
     ) -> Result<()> {
         pin_mut!(block_data_stream);
 
@@ -92,12 +86,12 @@ impl<'a> SpScanner<'a> {
             }
 
             let blockdata = blockdata?;
-            let blkhash = blockdata.blkhash;
-            let blkheight = blockdata.blkheight;
+            let blkhash = blockdata.blkhash();
+            let blkheight = blockdata.blkheight();
 
-            tweak_count += blockdata.tweaks.len();
+            tweak_count += blockdata.tweaks().len();
 
-            let (discovered_outputs, discovered_inputs) = self.process_block(blockdata).await?;
+            let (discovered_outputs, discovered_inputs) = self.process_block(&blockdata).await?;
 
             self.updater.record_block_scan_result(
                 blkheight,
@@ -114,24 +108,14 @@ impl<'a> SpScanner<'a> {
 
     async fn process_block(
         &mut self,
-        blockdata: BlockData,
+        blockdata: &BoxedBlockData,
     ) -> Result<(HashMap<OutPoint, DiscoveredOutput>, HashSet<OutPoint>)> {
-        let BlockData {
-            blkheight,
-            tweaks,
-            new_utxo_filter,
-            spent_filter,
-            ..
-        } = blockdata;
-
-        let outs = self
-            .process_block_outputs(blkheight, tweaks, new_utxo_filter)
-            .await?;
+        let outs = self.process_block_outputs(blockdata).await?;
 
         // after processing outputs, we add the found outputs to our list
         self.owned_outpoints.extend(outs.keys());
 
-        let ins = self.process_block_inputs(blkheight, spent_filter).await?;
+        let ins = self.process_block_inputs(blockdata).await?;
 
         // after processing inputs, we remove the found inputs
         self.owned_outpoints.retain(|item| !ins.contains(item));
@@ -141,11 +125,11 @@ impl<'a> SpScanner<'a> {
 
     async fn process_block_outputs(
         &self,
-        blkheight: Height,
-        tweaks: Vec<PublicKey>,
-        new_utxo_filter: FilterData,
+        blockdata: &BoxedBlockData,
     ) -> Result<HashMap<OutPoint, DiscoveredOutput>> {
         let mut res = HashMap::new();
+
+        let tweaks = blockdata.tweaks();
 
         if !tweaks.is_empty() {
             let secrets_map = self.client.script_to_secret_map(tweaks)?;
@@ -153,16 +137,12 @@ impl<'a> SpScanner<'a> {
             //last_scan = last_scan.max(n as u32);
             let candidate_spks: Vec<&[u8; 34]> = secrets_map.keys().collect();
 
-            //get block gcs & check match
-            let blkfilter = BlockFilter::new(&new_utxo_filter.data);
-            let blkhash = new_utxo_filter.block_hash;
-
-            let matched_outputs = Self::check_block_outputs(blkfilter, blkhash, candidate_spks)?;
+            let matched_outputs = blockdata.check_match_outputs(candidate_spks)?;
 
             //if match: fetch and scan utxos
             if matched_outputs {
-                info!("matched outputs on: {}", blkheight);
-                let found = self.scan_utxos(blkheight, secrets_map).await?;
+                info!("matched outputs on: {}", blockdata.blkheight());
+                let found = self.scan_utxos(blockdata.blkheight(), secrets_map).await?;
 
                 if !found.is_empty() {
                     for (label, utxo, tweak) in found {
@@ -188,32 +168,20 @@ impl<'a> SpScanner<'a> {
 
     async fn process_block_inputs(
         &self,
-        blkheight: Height,
-        spent_filter: FilterData,
+        blockdata: &(dyn BlockData + Send + Sync),
     ) -> Result<HashSet<OutPoint>> {
         let mut res = HashSet::new();
 
-        let blkhash = spent_filter.block_hash;
-
-        // first get the 8-byte hashes used to construct the input filter
-        let input_hashes_map = self.get_input_hashes(blkhash)?;
-
-        // check against filter
-        let blkfilter = BlockFilter::new(&spent_filter.data);
-        let matched_inputs = self.check_block_inputs(
-            blkfilter,
-            blkhash,
-            input_hashes_map.keys().cloned().collect(),
-        )?;
+        let match_on_inputs = blockdata.check_match_inputs(&self.owned_outpoints)?;
 
         // if match: download spent data, collect the outpoints that are spent
-        if matched_inputs {
-            info!("matched inputs on: {}", blkheight);
-            let spent = self.backend.spent_index(blkheight).await?.data;
+        if match_on_inputs {
+            info!("matched inputs on: {}", blockdata.blkheight());
+            let spent = self.backend.spent_index(blockdata.blkheight()).await?.data;
+            let input_hashes_map = blockdata.input_hashes_map(&self.owned_outpoints)?;
 
             for spent in spent {
                 let hex: &[u8] = spent.as_ref();
-
                 if let Some(outpoint) = input_hashes_map.get(hex) {
                     res.insert(*outpoint);
                 }
@@ -293,60 +261,6 @@ impl<'a> SpScanner<'a> {
         }
 
         Ok(res)
-    }
-
-    // Check if this block contains relevant transactions
-    fn check_block_outputs(
-        created_utxo_filter: BlockFilter,
-        blkhash: BlockHash,
-        candidate_spks: Vec<&[u8; 34]>,
-    ) -> Result<bool> {
-        // check output scripts
-        let output_keys: Vec<_> = candidate_spks
-            .into_iter()
-            .map(|spk| spk[2..].as_ref())
-            .collect();
-
-        // note: match will always return true for an empty query!
-        if !output_keys.is_empty() {
-            Ok(created_utxo_filter.match_any(&blkhash, &mut output_keys.into_iter())?)
-        } else {
-            Ok(false)
-        }
-    }
-
-    fn get_input_hashes(&self, blkhash: BlockHash) -> Result<HashMap<[u8; 8], OutPoint>> {
-        let mut map: HashMap<[u8; 8], OutPoint> = HashMap::new();
-
-        for outpoint in &self.owned_outpoints {
-            let mut arr = [0u8; 68];
-            arr[..32].copy_from_slice(&outpoint.txid.to_raw_hash().to_byte_array());
-            arr[32..36].copy_from_slice(&outpoint.vout.to_le_bytes());
-            arr[36..].copy_from_slice(&blkhash.to_byte_array());
-            let hash = sha256::Hash::hash(&arr);
-
-            let mut res = [0u8; 8];
-            res.copy_from_slice(&hash[..8]);
-
-            map.insert(res, *outpoint);
-        }
-
-        Ok(map)
-    }
-
-    // Check if this block contains relevant transactions
-    fn check_block_inputs(
-        &self,
-        spent_filter: BlockFilter,
-        blkhash: BlockHash,
-        input_hashes: Vec<[u8; 8]>,
-    ) -> Result<bool> {
-        // note: match will always return true for an empty query!
-        if !input_hashes.is_empty() {
-            Ok(spent_filter.match_any(&blkhash, &mut input_hashes.into_iter())?)
-        } else {
-            Ok(false)
-        }
     }
 
     fn interrupt_requested(&self) -> bool {
