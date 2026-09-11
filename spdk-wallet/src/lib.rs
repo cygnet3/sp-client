@@ -9,6 +9,10 @@ pub use spdk_core::updater;
 #[cfg(feature = "backend-blindbit-v1")]
 pub use backend_blindbit_v1;
 
+// re-export frigate backend if enabled
+#[cfg(feature = "backend-frigate")]
+pub use backend_frigate;
+
 // re-export libraries for consumers
 pub use bip321;
 pub use bitcoin;
