@@ -1,0 +1,26 @@
+[package]
+name = "psbt"
+version = "0.1.0"
+edition = "2021"
+repository.workspace = true
+
+[lib]
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[features]
+default = ["dleq-standalone"]
+dleq-native = ["rust-dleq/native"]
+dleq-standalone = ["rust-dleq/standalone"]
+
+[dependencies]
+bitcoin.workspace = true
+silentpayments.workspace = true
+secp256k1.workspace = true
+psbt-v2.workspace = true
+rust-dleq.workspace = true
+rand.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true

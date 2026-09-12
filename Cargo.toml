@@ -1,5 +1,5 @@
 [workspace]
-members = ["spdk-core", "backend-blindbit-v1", "spdk-wallet", "silentpayments"]
+members = ["spdk-core", "backend-blindbit-v1", "spdk-wallet", "silentpayments", "psbt"]
 resolver = "3"
 
 [workspace.dependencies]
@@ -7,6 +7,7 @@ resolver = "3"
 spdk-core = { path = "spdk-core" }
 silentpayments = { path = "silentpayments" }
 backend-blindbit-v1 = { path = "backend-blindbit-v1"}
+psbt = { path = "psbt" }
 
 # Core dependencies - shared across crates
 anyhow = "1.0"
@@ -14,20 +15,38 @@ bech32 = "0.9"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"
 bip321 = { git="https://gitlab.com/Sosthene00/bark.git", rev="83ab79264159869503b16fa475e0ed61ffa33174", default-features = false }
-bitcoin = { version = "0.32.8", features = ["serde", "rand", "base64"] }
-bitcoin_hashes = "0.13.0"
+bitcoin = { version = "0.32.102", features = ["serde", "rand", "base64"] }
+bitcoin_hashes = "0.14"
 rayon = "1.10.0"
 futures = "0.3"
 async-trait = "0.1"
 log = "0.4"
 hex = { version = "0.4.3", features = ["serde"] }
+hmac = "0.12"
+sha2 = "0.10"
 bdk_coin_select = "0.4.0"
 reqwest = { version = "0.12.4", features = [
   "json",
   "rustls-tls",
   "gzip",
 ], default-features = false }
+psbt-v2 = { git = "https://gitea.bitcoin.ninja/sosthene/rust-psbt.git", rev = "363721f6ea53b23eb6a88cd81e9c4155a4a46bb6", features = ["silent-payments", "miniscript"] }
+# DLEQ (BIP-374) backend decision (2026-09):
+# We use rust-dleq's pure-Rust `standalone` backend (the default in `silentpayments`
+# and `psbt`), pinned to this fork. It is verified against the official BIP-374
+# test vectors (byte-identical proofs; all negative cases reject).
+#
+# The `dleq-native` path (vendored libsecp256k1) is deferred: it builds its own
+# libsecp256k1.a alongside secp256k1-sys's, and unifying them would mean forking
+# rust-secp256k1 and hand-porting its context/memory patches onto the moving
+# libsecp PR #1802 branch — not worth it for a stopgap.
+#
+# Revisit when secp256k1 PR #1802 (or #1651) merges and rust-secp256k1 ships the
+# DLEQ module. Also watch bips#2262 (challenge `e` as scalar) — if it lands, both
+# the C and standalone impls plus the test vectors change.
+rust-dleq = { git = "https://github.com/Sosthene00/rust-dleq.git", rev = "097644a14d87c454e9bd9895de2e60992ff1ba93", default-features = false }
 secp256k1 = { version = "0.29.0" }
+rand = "0.8"
 
 [workspace.package]
 version = "0.7.0"

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use anyhow::Error;
@@ -8,9 +9,12 @@ use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{Address, Amount, Network, OutPoint, Transaction};
 use serde::{Deserialize, Serialize};
 use silentpayments::SilentPaymentCode;
-use silentpayments::utils::sending::PartialSecret;
+use silentpayments::TransactionSharedSecret;
+use silentpayments::secp256k1::PublicKey as SpPublicKey;
 
 use spdk_core::updater::DiscoveredOutput;
+
+use super::coin_select::Strategy;
 
 // re-export from bdk_coin_select, as we use this in the api
 pub use bdk_coin_select::FeeRate;
@@ -59,9 +63,16 @@ pub struct Recipient {
 pub struct SilentPaymentUnsignedTransaction {
     pub selected_utxos: Vec<(OutPoint, DiscoveredOutput)>,
     pub recipients: Vec<Recipient>,
-    pub partial_secret: PartialSecret,
+    pub shared_secrets: HashMap<SpPublicKey, TransactionSharedSecret>,
     pub unsigned_tx: Option<Transaction>,
     pub network: Network,
+    /// Wallet change amount (zero for drain / changeless selections).
+    pub change: Amount,
+    /// Indices into `recipients` that are change outputs.
+    pub change_indexes: Vec<usize>,
+    pub fee: Amount,
+    pub actual_fee_rate: FeeRate,
+    pub strategy: Strategy,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

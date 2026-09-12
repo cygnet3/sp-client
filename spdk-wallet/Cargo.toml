@@ -10,6 +10,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 [dependencies]
 spdk-core.workspace = true
 backend-blindbit-v1 = { workspace = true, optional = true }
+psbt.workspace = true
 
 anyhow.workspace = true
 bitcoin.workspace = true
@@ -20,6 +21,7 @@ rayon = { workspace = true, optional = true }
 log.workspace = true
 bdk_coin_select.workspace = true
 bip321.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
