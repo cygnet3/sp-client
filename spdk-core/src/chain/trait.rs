@@ -1,15 +1,11 @@
-use std::{
-    collections::{HashMap, HashSet},
-    ops::RangeInclusive,
-    pin::Pin,
-};
+use std::{collections::HashSet, ops::RangeInclusive, pin::Pin};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use bitcoin::{Amount, BlockHash, OutPoint, absolute::Height, secp256k1::PublicKey};
 use futures::Stream;
 
-use super::structs::{SpentIndexData, UtxoData};
+use super::structs::UtxoData;
 
 pub type BoxedBlockData = Box<dyn BlockData + Send + Sync>;
 
@@ -22,7 +18,15 @@ pub trait ChainBackend {
         with_cutthrough: bool,
     ) -> Pin<Box<dyn Stream<Item = Result<BoxedBlockData>> + Send>>;
 
-    async fn spent_index(&self, block_height: Height) -> Result<SpentIndexData>;
+    /// returns all spent outpoints from a provided list of outpoints at this height.
+    /// We also pass the block_hash here, to make sure the block data still matches the expected
+    /// block from get_block_data_for_range.
+    async fn detect_spent_outpoints(
+        &self,
+        block_height: Height,
+        block_hash: BlockHash,
+        outpoints: HashSet<OutPoint>,
+    ) -> Result<HashSet<OutPoint>>;
 
     async fn utxos(&self, block_height: Height) -> Result<Vec<UtxoData>>;
 }
@@ -40,10 +44,4 @@ pub trait BlockData {
 
     /// Fetch the transaction tweaks from this block.
     fn tweaks(&self) -> Vec<PublicKey>;
-
-    // temporary, will be dropped later
-    fn input_hashes_map(
-        &self,
-        owned_outpoints: &HashSet<OutPoint>,
-    ) -> anyhow::Result<HashMap<[u8; 8], OutPoint>>;
 }

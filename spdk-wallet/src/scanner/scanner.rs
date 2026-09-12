@@ -166,28 +166,23 @@ impl<'a> SpScanner<'a> {
         Ok(res)
     }
 
-    async fn process_block_inputs(
-        &self,
-        blockdata: &(dyn BlockData + Send + Sync),
-    ) -> Result<HashSet<OutPoint>> {
-        let mut res = HashSet::new();
-
+    async fn process_block_inputs(&self, blockdata: &BoxedBlockData) -> Result<HashSet<OutPoint>> {
         let match_on_inputs = blockdata.check_match_inputs(&self.owned_outpoints)?;
 
-        // if match: download spent data, collect the outpoints that are spent
         if match_on_inputs {
+            // if match: return the set of all outpoints that have been spent this block
             info!("matched inputs on: {}", blockdata.blkheight());
-            let spent = self.backend.spent_index(blockdata.blkheight()).await?.data;
-            let input_hashes_map = blockdata.input_hashes_map(&self.owned_outpoints)?;
-
-            for spent in spent {
-                let hex: &[u8] = spent.as_ref();
-                if let Some(outpoint) = input_hashes_map.get(hex) {
-                    res.insert(*outpoint);
-                }
-            }
+            self.backend
+                .detect_spent_outpoints(
+                    blockdata.blkheight(),
+                    blockdata.blkhash(),
+                    self.owned_outpoints.clone(),
+                )
+                .await
+        } else {
+            // no match: return an empty set
+            Ok(HashSet::new())
         }
-        Ok(res)
     }
 
     async fn scan_utxos(

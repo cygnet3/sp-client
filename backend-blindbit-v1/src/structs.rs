@@ -1,13 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::api_structs::FilterResponse;
-use bitcoin::{
-    BlockHash, OutPoint,
-    absolute::Height,
-    bip158::BlockFilter,
-    hashes::{Hash, sha256},
-    secp256k1::PublicKey,
-};
+use crate::utils::input_hashes_map;
+use bitcoin::{BlockHash, OutPoint, absolute::Height, bip158::BlockFilter, secp256k1::PublicKey};
 use spdk_core::chain::BlockData;
 
 pub struct BlindbitV1BlockData {
@@ -64,7 +59,7 @@ impl BlockData for BlindbitV1BlockData {
 
     // Check if this block contains relevant transactions
     fn check_match_inputs(&self, owned_outpoints: &HashSet<OutPoint>) -> anyhow::Result<bool> {
-        let input_hashes_map = self.input_hashes_map(owned_outpoints)?;
+        let input_hashes_map = input_hashes_map(owned_outpoints, self.blkhash)?;
 
         let input_hashes: Vec<[u8; 8]> = input_hashes_map.keys().cloned().collect();
 
@@ -76,27 +71,5 @@ impl BlockData for BlindbitV1BlockData {
         } else {
             Ok(false)
         }
-    }
-
-    fn input_hashes_map(
-        &self,
-        owned_outpoints: &HashSet<OutPoint>,
-    ) -> anyhow::Result<HashMap<[u8; 8], OutPoint>> {
-        let mut map: HashMap<[u8; 8], OutPoint> = HashMap::new();
-
-        for outpoint in owned_outpoints {
-            let mut arr = [0u8; 68];
-            arr[..32].copy_from_slice(&outpoint.txid.to_raw_hash().to_byte_array());
-            arr[32..36].copy_from_slice(&outpoint.vout.to_le_bytes());
-            arr[36..].copy_from_slice(&self.blkhash.to_byte_array());
-            let hash = sha256::Hash::hash(&arr);
-
-            let mut res = [0u8; 8];
-            res.copy_from_slice(&hash[..8]);
-
-            map.insert(res, *outpoint);
-        }
-
-        Ok(map)
     }
 }

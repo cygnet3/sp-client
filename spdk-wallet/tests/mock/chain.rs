@@ -2,11 +2,17 @@ use anyhow::Result;
 use backend_blindbit_v1::{
     api_structs::{FilterResponse, SpentIndexResponse, UtxoResponse},
     structs::BlindbitV1BlockData,
+    utils::input_hashes_map,
 };
-use std::{fs::File, ops::RangeInclusive, pin::Pin};
+use std::collections::HashSet;
+use std::fs::File;
+use std::ops::RangeInclusive;
+use std::pin::Pin;
 
 use async_trait::async_trait;
-use bitcoin::{Amount, absolute::Height, secp256k1::PublicKey};
+use bitcoin::absolute::Height;
+use bitcoin::secp256k1::PublicKey;
+use bitcoin::{Amount, BlockHash, OutPoint};
 use futures::{Stream, stream};
 
 use spdk_core::chain::{BoxedBlockData, ChainBackend, SpentIndexData, UtxoData};
@@ -52,12 +58,30 @@ impl ChainBackend for MockChainBackend {
         Box::pin(stream)
     }
 
-    async fn spent_index(&self, block_height: Height) -> Result<SpentIndexData> {
+    async fn detect_spent_outpoints(
+        &self,
+        block_height: Height,
+        block_hash: BlockHash,
+        outpoints: HashSet<OutPoint>,
+    ) -> Result<HashSet<OutPoint>> {
         let file =
             File::open(format!("{BLOCK_DATA_PATH}/{block_height}/spent-index.json")).unwrap();
         let spent_index: SpentIndexResponse = serde_json::from_reader(file).unwrap();
 
-        Ok(spent_index.into())
+        let index_data: SpentIndexData = spent_index.into();
+
+        let hashes_to_outpoint = input_hashes_map(&outpoints, block_hash)?;
+
+        let mut res = HashSet::new();
+
+        for spent in index_data.data {
+            let hex: &[u8] = spent.as_ref();
+            if let Some(outpoint) = hashes_to_outpoint.get(hex) {
+                res.insert(*outpoint);
+            }
+        }
+
+        Ok(res)
     }
 
     async fn utxos(&self, block_height: Height) -> Result<Vec<UtxoData>> {
