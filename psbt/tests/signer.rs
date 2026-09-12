@@ -136,15 +136,6 @@ fn sp_p2tr_input(
         Fingerprint::default(),
         DerivationPath::default(),
     );
-    // Upstream's BIP-375 signer checks require pubkey info on any input carrying a
-    // DLEQ proof; for P2TR they look at `tap_internal_key`/`tap_key_origins` (not
-    // the BIP-376 map). SP inputs have no internal key, so declare the untweaked
-    // spend key's origin here.
-    let (spend_xonly, _) = spend_sk.x_only_public_key(secp);
-    input.tap_key_origins.insert(
-        spend_xonly,
-        (vec![], (Fingerprint::default(), DerivationPath::default())),
-    );
     input
 }
 
