@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use bitcoin::{Amount, BlockHash, Network, ScriptBuf, Txid, absolute::Height};
 use serde::{Deserialize, Deserializer, Serialize};
-use spdk_core::chain::{FilterData, SpentIndexData, UtxoData};
+use spdk_core::chain::{SpentIndexData, UtxoData};
 
 #[derive(Debug, Deserialize)]
 pub struct BlockHeightResponse {
@@ -59,15 +59,6 @@ pub struct FilterResponse {
     pub block_height: Height,
     pub data: MyHex,
     pub filter_type: i32,
-}
-
-impl From<FilterResponse> for FilterData {
-    fn from(value: FilterResponse) -> Self {
-        Self {
-            block_hash: value.block_hash,
-            data: value.data.hex,
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]

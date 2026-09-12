@@ -1,12 +1,4 @@
-use bitcoin::{Amount, BlockHash, ScriptBuf, Txid, absolute::Height, secp256k1::PublicKey};
-
-pub struct BlockData {
-    pub blkheight: Height,
-    pub blkhash: BlockHash,
-    pub tweaks: Vec<PublicKey>,
-    pub new_utxo_filter: FilterData,
-    pub spent_filter: FilterData,
-}
+use bitcoin::{Amount, ScriptBuf, Txid};
 
 pub struct UtxoData {
     pub txid: Txid,
@@ -18,9 +10,4 @@ pub struct UtxoData {
 
 pub struct SpentIndexData {
     pub data: Vec<Vec<u8>>,
-}
-
-pub struct FilterData {
-    pub block_hash: BlockHash,
-    pub data: Vec<u8>,
 }

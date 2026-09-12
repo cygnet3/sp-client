@@ -1,13 +1,13 @@
-use std::{ops::RangeInclusive, pin::Pin};
+use std::{collections::HashSet, ops::RangeInclusive, pin::Pin};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use async_trait::async_trait;
-use bitcoin::{Amount, absolute::Height};
+use bitcoin::{Amount, BlockHash, OutPoint, absolute::Height};
 use futures::{Stream, StreamExt, stream};
 
-use spdk_core::chain::{BlockData, ChainBackend, SpentIndexData, UtxoData};
+use spdk_core::chain::{BoxedBlockData, ChainBackend, SpentIndexData, UtxoData};
 
-use crate::BlindbitClient;
+use crate::{BlindbitClient, structs::BlindbitV1BlockData, utils::input_hashes_map};
 
 const CONCURRENT_FILTER_REQUESTS: usize = 200;
 
@@ -33,7 +33,7 @@ impl ChainBackend for BlindbitBackend {
         range: RangeInclusive<Height>,
         dust_limit: Amount,
         with_cutthrough: bool,
-    ) -> Pin<Box<dyn Stream<Item = Result<BlockData>> + Send>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<BoxedBlockData>> + Send>> {
         let client = self.client.clone();
 
         // convert range to u32 since Height does not implement Step
@@ -52,13 +52,13 @@ impl ChainBackend for BlindbitBackend {
                     let new_utxo_filter = client.filter_new_utxos(blkheight).await?;
                     let spent_filter = client.filter_spent(blkheight).await?;
                     let blkhash = new_utxo_filter.block_hash;
-                    Ok(BlockData {
+                    Ok(Box::new(BlindbitV1BlockData {
                         blkheight,
                         blkhash,
                         tweaks,
                         new_utxo_filter: new_utxo_filter.into(),
                         spent_filter: spent_filter.into(),
-                    })
+                    }) as BoxedBlockData)
                 }
             })
             .buffered(CONCURRENT_FILTER_REQUESTS);
@@ -66,8 +66,31 @@ impl ChainBackend for BlindbitBackend {
         Box::pin(res)
     }
 
-    async fn spent_index(&self, block_height: Height) -> Result<SpentIndexData> {
-        self.client.spent_index(block_height).await.map(Into::into)
+    async fn detect_spent_outpoints(
+        &self,
+        block_height: Height,
+        block_hash: BlockHash,
+        outpoints: HashSet<OutPoint>,
+    ) -> Result<HashSet<OutPoint>> {
+        let response = self.client.spent_index(block_height).await?;
+        if block_hash != response.block_hash {
+            bail!("Mismatched block hash");
+        }
+
+        let index_data: SpentIndexData = response.into();
+
+        let input_hashes_map = input_hashes_map(&outpoints, block_hash)?;
+
+        let mut res = HashSet::new();
+
+        for spent in index_data.data {
+            let hex: &[u8] = spent.as_ref();
+            if let Some(outpoint) = input_hashes_map.get(hex) {
+                res.insert(*outpoint);
+            }
+        }
+
+        Ok(res)
     }
 
     async fn utxos(&self, block_height: Height) -> Result<Vec<UtxoData>> {
